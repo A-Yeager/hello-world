@@ -5,6 +5,10 @@
 > code — must trace back to the Objects, Links, and Actions defined here. If a term does not
 > appear in this document, it does not belong in a spec.
 >
+> **Two ways to fill this in.** Run the guided app — `apps/ontology-builder/index.html` — which
+> walks through the same structure and writes this file for you, complete with a machine-readable
+> appendix. Or work in this file directly, as below.
+>
 > **How to use it.** Fill in Part 1 (Context) and Part 2 (Glossary) first, then model the
 > Objects (Part 3), the Links between them (Part 4), and the Actions taken on them (Part 5).
 > Copy the "Object Template" block once per object. Delete guidance blockquotes before sharing.

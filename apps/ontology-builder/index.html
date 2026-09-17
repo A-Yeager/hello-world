@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ontology Builder</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #14181f; --muted: #5d6675;
+    --line: #dfe3ea; --accent: #2f5bd8; --accent-soft: #e8eefc;
+    --ok: #1a7f52; --warn: #a15c00; --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #10141a; --panel: #171d26; --ink: #e7ebf2; --muted: #9aa5b6;
+      --line: #2a3340; --accent: #7aa2ff; --accent-soft: #1d2740;
+      --ok: #59c99a; --warn: #e0a95c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  header.top {
+    display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+    padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 20;
+  }
+  header.top h1 { font-size: 16px; margin: 0 8px 0 0; font-weight: 650; }
+  header.top .who { color: var(--muted); font-size: 13px; margin-right: auto; }
+  .layout { display: grid; grid-template-columns: 220px minmax(0,1fr) 280px; gap: 20px; padding: 20px; align-items: start; }
+  @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } nav.steps { position: static; } aside { position: static; } }
+  nav.steps { position: sticky; top: 70px; display: flex; flex-direction: column; gap: 4px; }
+  nav.steps button {
+    text-align: left; padding: 9px 12px; border-radius: var(--radius); border: 1px solid transparent;
+    background: transparent; color: var(--ink); cursor: pointer; font-size: 14px;
+    display: flex; justify-content: space-between; gap: 8px;
+  }
+  nav.steps button:hover { background: var(--panel); }
+  nav.steps button[aria-current="true"] { background: var(--accent-soft); border-color: var(--accent); font-weight: 600; }
+  nav.steps .count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  main { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; min-width: 0; }
+  main h2 { margin: 0 0 4px; font-size: 20px; }
+  main .lede { color: var(--muted); margin: 0 0 20px; max-width: 70ch; }
+  aside { position: sticky; top: 70px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+  aside h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin-bottom: 12px; }
+  .bar span { display: block; height: 100%; background: var(--ok); transition: width .2s; }
+  ul.checks { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+  ul.checks li { padding: 5px 0; border-bottom: 1px solid var(--line); display: flex; gap: 8px; align-items: flex-start; }
+  ul.checks li:last-child { border-bottom: 0; }
+  ul.checks .mark { flex: none; width: 1em; }
+  ul.checks .pass .mark { color: var(--ok); }
+  ul.checks .fail { color: var(--muted); }
+  ul.checks .fail .mark { color: var(--warn); }
+  ul.checks .detail { display: block; font-size: 12px; color: var(--muted); }
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .field.wide { grid-column: 1 / -1; }
+  /* hints vary in height, so push the control to the bottom to keep a row's inputs aligned */
+  .field > input, .field > select, .field > textarea { margin-top: auto; }
+  label { font-size: 13px; font-weight: 600; }
+  .hint { font-size: 12px; color: var(--muted); }
+  input, select, textarea {
+    font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 10px; width: 100%;
+  }
+  textarea { min-height: 72px; resize: vertical; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button.btn {
+    font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--ink); cursor: pointer;
+  }
+  button.btn:hover { border-color: var(--accent); }
+  button.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.btn.small { padding: 5px 10px; font-size: 13px; }
+  button.btn.danger { color: #b33; }
+  .card { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin-bottom: 12px; background: var(--bg); }
+  .card > summary { cursor: pointer; font-weight: 600; list-style: none; display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+  .card > summary::-webkit-details-marker { display: none; }
+  .card > summary .sub { font-weight: 400; color: var(--muted); font-size: 13px; }
+  .card[open] > summary { margin-bottom: 12px; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+  .row { border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-bottom: 8px; background: var(--panel); }
+  .row .rowhead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .row .rowhead .idx { font-size: 12px; color: var(--muted); }
+  .sub-section { margin-top: 16px; }
+  .sub-section h4 { margin: 0 0 2px; font-size: 14px; }
+  .sub-section .hint { margin-bottom: 8px; }
+  .empty { color: var(--muted); font-size: 13px; padding: 8px 0; }
+  .navbtns { display: flex; justify-content: space-between; margin-top: 24px; gap: 8px; }
+  pre.preview {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px;
+    max-height: 420px; overflow: auto; font-size: 12px; white-space: pre-wrap; word-break: break-word;
+  }
+  .toast {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    background: var(--ink); color: var(--bg); padding: 8px 16px; border-radius: 999px;
+    font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .2s;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>Ontology Builder</h1>
+  <span class="who" id="who">New document</span>
+  <button class="btn small" id="btn-example">Load example</button>
+  <button class="btn small" id="btn-import">Import .md / .json</button>
+  <button class="btn small" id="btn-json">Save .json</button>
+  <button class="btn small primary" id="btn-md">Download .md</button>
+  <button class="btn small danger" id="btn-reset">Reset</button>
+  <input type="file" id="file" accept=".md,.markdown,.json" hidden>
+</header>
+
+<div class="layout">
+  <nav class="steps" id="nav"></nav>
+  <main id="main"></main>
+  <aside>
+    <h3>Readiness</h3>
+    <div class="bar"><span id="progress" style="width:0%"></span></div>
+    <ul class="checks" id="checks"></ul>
+  </aside>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="ontology-md.js"></script>
+<script>
+(function () {
+  'use strict';
+  var OM = window.OntologyMD;
+  var STORAGE_KEY = 'ontology-builder:v1';
+
+  var model = load();
+  var stepIndex = 0;
+
+  /* ------------------------------------------------------- persistence */
+
+  function load() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) return Object.assign(OM.emptyModel(), JSON.parse(raw));
+    } catch (e) { /* private mode, blocked storage — fall through */ }
+    return OM.emptyModel();
+  }
+  var saveTimer = null;
+  function save() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(model)); } catch (e) {}
+    }, 250);
+  }
+  function touched() { save(); renderChecks(); renderNav(); renderWho(); }
+
+  /* ------------------------------------------------------ field helpers */
+
+  function el(tag, attrs, children) {
+    var n = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      if (k === 'class') n.className = attrs[k];
+      else if (k === 'text') n.textContent = attrs[k];
+      else if (k === 'html') n.innerHTML = attrs[k];
+      else if (k.slice(0, 2) === 'on') n.addEventListener(k.slice(2), attrs[k]);
+      else n.setAttribute(k, attrs[k]);
+    });
+    (children || []).forEach(function (c) { if (c) n.appendChild(c); });
+    return n;
+  }
+
+  /** def: {key,label,hint,type:'text|textarea|select',options,placeholder,wide} */
+  function field(def, obj) {
+    var input;
+    if (def.type === 'textarea') {
+      input = el('textarea', { placeholder: def.placeholder || '', rows: def.rows || 3 });
+    } else if (def.type === 'select') {
+      input = el('select');
+      (def.options || []).forEach(function (o) {
+        input.appendChild(el('option', { value: o, text: o }));
+      });
+    } else {
+      input = el('input', { type: 'text', placeholder: def.placeholder || '' });
+    }
+    input.value = obj[def.key] == null ? '' : obj[def.key];
+    input.addEventListener('input', function () { obj[def.key] = input.value; touched(); });
+    input.addEventListener('change', function () { obj[def.key] = input.value; touched(); });
+    return el('div', { class: 'field' + (def.wide ? ' wide' : '') }, [
+      el('label', { text: def.label }),
+      def.hint ? el('span', { class: 'hint', text: def.hint }) : null,
+      input
+    ]);
+  }
+
+  function fields(defs, obj) {
+    return el('div', { class: 'grid' }, defs.map(function (d) { return field(d, obj); }));
+  }
+
+  /**
+   * Repeating list of simple records.
+   * opts: {title, hint, addLabel, factory, label(item,i)}
+   */
+  function repeater(arr, defs, opts) {
+    opts = opts || {};
+    var body = el('div');
+    function draw() {
+      body.innerHTML = '';
+      if (!arr.length) body.appendChild(el('p', { class: 'empty', text: opts.emptyText || 'Nothing added yet.' }));
+      arr.forEach(function (item, i) {
+        var head = el('div', { class: 'rowhead' }, [
+          el('span', { class: 'idx', text: (opts.label ? opts.label(item, i) : '#' + (i + 1)) }),
+          el('button', {
+            class: 'btn small danger', text: 'Remove',
+            onclick: function () { arr.splice(i, 1); draw(); touched(); }
+          })
+        ]);
+        body.appendChild(el('div', { class: 'row' }, [head, fields(defs, item)]));
+      });
+      body.appendChild(el('button', {
+        class: 'btn small', text: opts.addLabel || '+ Add',
+        onclick: function () {
+          arr.push(opts.factory ? opts.factory() : {});
+          draw(); touched();
+        }
+      }));
+    }
+    draw();
+    return el('div', { class: 'sub-section' }, [
+      opts.title ? el('h4', { text: opts.title }) : null,
+      opts.hint ? el('p', { class: 'hint', text: opts.hint }) : null,
+      body
+    ]);
+  }
+
+  /* -------------------------------------------------- field definitions */
+
+  var OBJ_TYPES = ['Core', 'Supporting', 'Reference', 'External'];
+  var SENSITIVITY = ['Public', 'Internal', 'Confidential', 'PII', 'PCI', 'PHI'];
+  var PROP_TYPES = ['Text', 'Number', 'Money', 'Date/time', 'Boolean', 'Enumeration', 'Identifier', 'Reference', 'Document'];
+  var YESNO = ['Yes', 'No'];
+  var TRIGGERS = ['Manual', 'Scheduled', 'System', 'Event', 'External system'];
+  var CRITICALITY = ['High', 'Medium', 'Low'];
+  var CARDINALITIES = ['1 -> 1', '1 -> 0..1', '1 -> 0..*', '1 -> 1..*', '0..1 -> 0..*', '0..* -> 0..*'];
+  var QSTATUS = ['Open', 'Answered', 'Closed'];
+
+  function objectNames() {
+    return model.objects.map(function (o) { return o.name; }).filter(Boolean);
+  }
+
+  /* --------------------------------------------------------- the steps */
+
+  var steps = [
+    {
+      id: 'start', title: 'Start',
+      count: function () { return [['customer', 'domain', 'owner'].filter(function (k) { return model.meta[k]; }).length, 3]; },
+      render: function () {
+        return [
+          lede('Who is this ontology for? This header lands at the top of the generated Markdown and tells downstream agents whose business they are modelling.'),
+          fields([
+            { key: 'customer', label: 'Customer', hint: 'Legal or trading name.', wide: true },
+            { key: 'domain', label: 'Business unit / domain in scope', hint: 'e.g. Commercial Lending — Origination', wide: true },
+            { key: 'owner', label: 'Document owner (PM)', hint: 'Name and email.' },
+            { key: 'smes', label: 'Customer SMEs consulted', hint: 'Name — role; separated by semicolons.' },
+            { key: 'version', label: 'Version' },
+            { key: 'status', label: 'Status', type: 'select', options: ['Draft', 'In Review', 'Approved'] },
+            { key: 'lastUpdated', label: 'Last updated' },
+            { key: 'approvedBy', label: 'Approved by (customer)' }
+          ], model.meta)
+        ];
+      }
+    },
+    {
+      id: 'context', title: 'Context',
+      count: function () { return [(model.context.whatBusinessDoes ? 1 : 0) + Math.min(model.context.outcomes.length, 1), 2]; },
+      render: function () {
+        var c = model.context;
+        return [
+          lede('Describe the business in its own language — no solutions, no technology. Then state the outcomes this engagement has to move, because every Object and Action you capture later should serve one of them.'),
+          fields([{
+            key: 'whatBusinessDoes', label: 'What the business does', type: 'textarea', rows: 6, wide: true,
+            hint: 'Two or three paragraphs a new joiner could read without asking a follow-up question.'
+          }], c),
+          repeater(c.scope, [
+            { key: 'inScope', label: 'In scope' },
+            { key: 'outOfScope', label: 'Out of scope' },
+            { key: 'reason', label: 'Reason for exclusion' }
+          ], { title: 'Scope boundaries', addLabel: '+ Add boundary', hint: 'What this model covers — and, just as importantly, what it deliberately does not.' }),
+          repeater(c.outcomes, [
+            { key: 'id', label: 'ID', placeholder: 'O1' },
+            { key: 'outcome', label: 'Outcome', placeholder: 'Reduce quote turnaround' },
+            { key: 'current', label: 'Current measure', placeholder: '4 days' },
+            { key: 'target', label: 'Target', placeholder: '4 hours' },
+            { key: 'owner', label: 'Owner' }
+          ], {
+            title: 'Business outcomes', addLabel: '+ Add outcome',
+            hint: 'Measurable. Part 8 of the output maps each outcome to the Objects and Actions that mention its ID.',
+            factory: function () { return { id: 'O' + (model.context.outcomes.length + 1) }; },
+            label: function (o) { return o.id || 'Outcome'; }
+          }),
+          repeater(c.sources, [
+            { key: 'source', label: 'Source' },
+            { key: 'type', label: 'Type', type: 'select', options: ['Interview', 'Workshop', 'Document', 'System artifact', 'Observation'] },
+            { key: 'date', label: 'Date', placeholder: 'YYYY-MM-DD' },
+            { key: 'notes', label: 'Notes' }
+          ], { title: 'Source material', addLabel: '+ Add source', hint: 'So a reviewer can audit where any claim in this model came from.' })
+        ];
+      }
+    },
+    {
+      id: 'glossary', title: 'Glossary',
+      count: function () { return [model.glossary.length, model.glossary.length || 1]; },
+      render: function () {
+        return [
+          lede('Capture the words the customer uses, including the ones they use for the same thing. Undetected synonyms are the most common source of downstream defects — two teams building two objects because they heard two words.'),
+          repeater(model.glossary, [
+            { key: 'term', label: 'Term' },
+            { key: 'definition', label: 'Definition', type: 'textarea', wide: true },
+            { key: 'synonyms', label: 'Synonyms / aliases in use' },
+            { key: 'notConfuse', label: 'Do NOT confuse with' }
+          ], { title: 'Ubiquitous language', addLabel: '+ Add term', label: function (g) { return g.term || 'Term'; } }),
+          fields([{
+            key: 'conventions', label: 'Extra naming conventions (optional)', type: 'textarea', wide: true,
+            hint: 'Markdown. Appended to the standard conventions in Part 2.2.'
+          }], model)
+        ];
+      }
+    },
+    {
+      id: 'objects', title: 'Objects',
+      count: function () { return [model.objects.length, model.objects.length || 1]; },
+      render: function () {
+        var wrap = el('div');
+        model.objects.forEach(function (o, i) { wrap.appendChild(objectCard(o, i)); });
+        return [
+          lede('An Object is a thing the business recognises, talks about and tracks over time. Test: can someone point at an instance and say “this one”? If it only describes another thing it is a property; if it only happens it is an Action.'),
+          wrap,
+          el('button', {
+            class: 'btn primary', text: '+ Add object',
+            onclick: function () {
+              model.objects.push(OM.emptyObject(OM.nextId('OBJ', model.objects)));
+              renderStep(); touched();
+            }
+          })
+        ];
+      }
+    },
+    {
+      id: 'links', title: 'Links',
+      count: function () { return [model.links.length, model.links.length || 1]; },
+      render: function () {
+        var names = objectNames();
+        return [
+          lede('A Link is a named relationship the business relies on. Name it as a verb phrase that reads naturally in both directions, and say why it matters — a link with no business consequence is an implementation detail, not ontology.'),
+          repeater(model.links, [
+            { key: 'source', label: 'Source object', type: 'select', options: [''].concat(names) },
+            { key: 'verb', label: 'Link (verb phrase)', placeholder: 'places' },
+            { key: 'target', label: 'Target object', type: 'select', options: [''].concat(names) },
+            { key: 'cardinality', label: 'Cardinality', type: 'select', options: CARDINALITIES },
+            { key: 'reverse', label: 'Reverse reading', placeholder: 'Order is placed by Customer' },
+            { key: 'required', label: 'Required?', type: 'select', options: YESNO },
+            { key: 'why', label: 'Why it matters', wide: true },
+            { key: 'lifecycle', label: 'Lifecycle rule', placeholder: 'Order cannot exist without Customer' },
+            { key: 'mutable', label: 'Can it change over time?' },
+            { key: 'onDelete', label: 'On delete / archive of source' }
+          ], {
+            title: 'Links', addLabel: '+ Add link',
+            emptyText: names.length ? 'No links yet — add the relationships between your objects.' : 'Define some objects first, then link them.',
+            factory: function () { return OM.emptyLink(OM.nextId('LNK', model.links)); },
+            label: function (l) { return [l.id, l.source, l.verb, l.target].filter(Boolean).join(' '); }
+          })
+        ];
+      }
+    },
+    {
+      id: 'actions', title: 'Actions',
+      count: function () { return [model.actions.length, model.actions.length || 1]; },
+      render: function () {
+        var wrap = el('div');
+        model.actions.forEach(function (a, i) { wrap.appendChild(actionCard(a, i)); });
+        return [
+          lede('An Action is something a person, system or rule does to an object — the verbs of the business. Each one seeds a use case, an API operation and a set of tests, so pre-conditions and post-conditions matter more than prose.'),
+          wrap,
+          el('button', {
+            class: 'btn primary', text: '+ Add action',
+            onclick: function () {
+              model.actions.push(OM.emptyAction(OM.nextId('ACT', model.actions)));
+              renderStep(); touched();
+            }
+          }),
+          repeater(model.events, [
+            { key: 'id', label: 'ID', placeholder: 'EVT-01' },
+            { key: 'name', label: 'Event', placeholder: 'OrderApproved' },
+            { key: 'raisedBy', label: 'Raised by (Action)' },
+            { key: 'carries', label: 'Carries' },
+            { key: 'consumedBy', label: 'Consumed by' }
+          ], {
+            title: 'Events', addLabel: '+ Add event',
+            hint: 'Notable things the business reacts to — useful when an Action in one area triggers work in another.',
+            factory: function () { return { id: OM.nextId('EVT', model.events) }; },
+            label: function (e) { return e.id || 'Event'; }
+          })
+        ];
+      }
+    },
+    {
+      id: 'landscape', title: 'Roles & systems',
+      count: function () { return [Math.min(model.roles.length, 1) + Math.min(model.systems.length, 1), 2]; },
+      render: function () {
+        return [
+          lede('Who acts, and where the data lives. This is what turns Actions into permissions and Objects into integration points.'),
+          repeater(model.roles, [
+            { key: 'role', label: 'Role', hint: 'Human or system actor.' },
+            { key: 'description', label: 'Description' },
+            { key: 'objects', label: 'Objects they see' },
+            { key: 'actions', label: 'Actions they may perform', placeholder: 'ACT-01, ACT-04' },
+            { key: 'constraints', label: 'Constraints', placeholder: 'Own region only' }
+          ], { title: 'Actors, roles & permissions', addLabel: '+ Add role', label: function (r) { return r.role || 'Role'; } }),
+          repeater(model.systems, [
+            { key: 'system', label: 'System' },
+            { key: 'role', label: 'Role', placeholder: 'CRM' },
+            { key: 'mastered', label: 'Objects mastered' },
+            { key: 'consumed', label: 'Objects consumed' },
+            { key: 'integration', label: 'Integration style', placeholder: 'REST API, nightly file' },
+            { key: 'notes', label: 'Notes' }
+          ], { title: 'Systems & data landscape', addLabel: '+ Add system', label: function (s) { return s.system || 'System'; } })
+        ];
+      }
+    },
+    {
+      id: 'review', title: 'Review & export',
+      count: function () {
+        var c = OM.validate(model);
+        return [c.filter(function (x) { return x.pass; }).length, c.length];
+      },
+      render: function () {
+        var pre = el('pre', { class: 'preview', text: OM.toMarkdown(model) });
+        return [
+          lede('Work the checklist on the right down to zero warnings, then export. The Markdown carries a machine-readable appendix, so agents writing specs and code can parse the model exactly rather than guessing from prose — and you can re-import the same file here to keep editing.'),
+          repeater(model.openQuestions, [
+            { key: 'question', label: 'Question', wide: true },
+            { key: 'owner', label: 'Owner' },
+            { key: 'due', label: 'Due', placeholder: 'YYYY-MM-DD' },
+            { key: 'impact', label: 'Impact if unresolved' },
+            { key: 'status', label: 'Status', type: 'select', options: QSTATUS }
+          ], { title: 'Open questions', addLabel: '+ Add question', hint: 'Object-level questions are folded in automatically.' }),
+          repeater(model.traceability, [
+            { key: 'ontologyId', label: 'Ontology ID', placeholder: 'OBJ-02' },
+            { key: 'requirement', label: 'Requirement / Epic' },
+            { key: 'spec', label: 'Spec' },
+            { key: 'component', label: 'Component / Module' },
+            { key: 'tests', label: 'Tests' }
+          ], { title: 'Downstream traceability', addLabel: '+ Add trace', hint: 'Fill in as the lifecycle progresses to keep specs and code anchored to this model.' }),
+          repeater(model.changeLog, [
+            { key: 'version', label: 'Version' },
+            { key: 'date', label: 'Date', placeholder: 'YYYY-MM-DD' },
+            { key: 'author', label: 'Author' },
+            { key: 'change', label: 'Change' },
+            { key: 'reapproval', label: 'Customer re-approval needed?', type: 'select', options: ['—', 'Yes', 'No'] }
+          ], { title: 'Change log', addLabel: '+ Add entry', factory: function () { return { date: OM.today() }; } }),
+          repeater(model.signoff, [
+            { key: 'name', label: 'Name' },
+            { key: 'role', label: 'Role' },
+            { key: 'org', label: 'Organisation' },
+            { key: 'date', label: 'Date', placeholder: 'YYYY-MM-DD' },
+            { key: 'reference', label: 'Signature / approval reference' }
+          ], { title: 'Sign-off', addLabel: '+ Add signatory' }),
+          el('div', { class: 'sub-section' }, [
+            el('h4', { text: 'Generated Markdown' }),
+            el('p', { class: 'hint', text: 'Live preview of the file you will download.' }),
+            pre,
+            el('div', { class: 'navbtns' }, [
+              el('button', { class: 'btn', text: 'Copy to clipboard', onclick: copyMarkdown }),
+              el('button', { class: 'btn primary', text: 'Download .md', onclick: downloadMarkdown })
+            ])
+          ])
+        ];
+      }
+    }
+  ];
+
+  function lede(t) { return el('p', { class: 'lede', text: t }); }
+
+  /* ------------------------------------------------------ object cards */
+
+  function objectCard(o, i) {
+    var summary = el('summary', {}, [
+      el('span', { text: (o.id || 'OBJ') + ' · ' + (o.name || 'Untitled object') }),
+      el('span', { class: 'sub', text: (o.properties.length + ' properties') })
+    ]);
+    var card = el('details', { class: 'card' }, [summary]);
+    if (!o.name) card.open = true;
+
+    card.appendChild(fields([
+      { key: 'id', label: 'ID' },
+      { key: 'name', label: 'Object name', hint: 'Singular PascalCase noun, e.g. PurchaseOrder.' },
+      { key: 'type', label: 'Type', type: 'select', options: OBJ_TYPES },
+      { key: 'aka', label: 'Also known as', hint: 'Synonyms the business uses.' },
+      {
+        key: 'description', label: 'Description', type: 'textarea', rows: 5, wide: true,
+        hint: 'What is it, why does the business care, when does an instance come into existence, and when does it stop mattering?'
+      },
+      { key: 'owner', label: 'Business owner', hint: 'Role or team, not a person.' },
+      { key: 'systemOfRecord', label: 'System of record' },
+      { key: 'identifier', label: 'Unique identifier', hint: 'How the business refers to one instance, e.g. Order Number.' },
+      { key: 'volume', label: 'Typical volume / growth' },
+      { key: 'retention', label: 'Retention / regulatory' },
+      { key: 'sensitivity', label: 'Data sensitivity', type: 'select', options: SENSITIVITY }
+    ], o));
+
+    card.appendChild(repeater(o.properties, [
+      { key: 'name', label: 'Property' },
+      { key: 'description', label: 'Description', wide: true },
+      { key: 'example', label: 'Example value' },
+      { key: 'type', label: 'Type', type: 'select', options: PROP_TYPES },
+      { key: 'required', label: 'Required?', type: 'select', options: YESNO },
+      { key: 'derived', label: 'Derived? (formula)', placeholder: 'SUM(lineItem.value)' },
+      { key: 'source', label: 'Source' },
+      { key: 'notes', label: 'Notes / constraints' }
+    ], {
+      title: 'Properties', addLabel: '+ Add property',
+      hint: 'Business facts recorded about each instance. Leave storage types and column names to the data spec.',
+      factory: function () { return { type: 'Text', required: 'Yes' }; },
+      label: function (p) { return p.name || 'Property'; }
+    }));
+
+    card.appendChild(repeater(o.customProperties, [
+      { key: 'name', label: 'Property' },
+      { key: 'description', label: 'Description', wide: true },
+      { key: 'why', label: 'Why it exists / who asked for it' },
+      { key: 'appliesWhen', label: 'Applies when', placeholder: 'UK entity only' }
+    ], {
+      title: 'Custom / customer-specific properties', addLabel: '+ Add custom property',
+      hint: 'Anything that does not fit the columns above — regulatory flags, legacy fields kept for migration, region-only properties.'
+    }));
+
+    card.appendChild(repeater(o.states, [
+      { key: 'state', label: 'State' },
+      { key: 'meaning', label: 'Meaning', wide: true },
+      { key: 'enteredBy', label: 'Entered by (Action)', placeholder: 'ACT-01 CreateOrder' },
+      { key: 'exitsTo', label: 'Exits to' }
+    ], { title: 'States (lifecycle)', addLabel: '+ Add state', hint: 'Only if this object moves through a lifecycle.' }));
+
+    card.appendChild(repeater(o.rules, [
+      { key: 'id', label: 'ID', placeholder: 'RULE-01' },
+      { key: 'rule', label: 'Rule', wide: true },
+      { key: 'when', label: 'Enforced when' },
+      { key: 'consequence', label: 'Consequence if violated' }
+    ], {
+      title: 'Business rules & invariants', addLabel: '+ Add rule',
+      hint: 'Statements that must always hold — these become acceptance criteria and tests.',
+      factory: function () { return { id: OM.nextId('RULE', o.rules) }; }
+    }));
+
+    card.appendChild(repeater(o.questions, [
+      { key: 'question', label: 'Question', wide: true },
+      { key: 'raisedBy', label: 'Raised by' },
+      { key: 'owner', label: 'Needs answer from' },
+      { key: 'due', label: 'By when', placeholder: 'YYYY-MM-DD' },
+      { key: 'status', label: 'Status', type: 'select', options: QSTATUS }
+    ], { title: 'Open questions', addLabel: '+ Add question' }));
+
+    card.appendChild(el('div', { class: 'sub-section' }, [
+      el('h4', { text: 'Example instance' }),
+      el('p', { class: 'hint', text: 'One real (anonymised) instance as YAML. Concrete examples catch modelling errors that abstract definitions hide — and make good test fixtures.' }),
+      fields([{ key: 'example', label: 'YAML', type: 'textarea', rows: 5, wide: true }], o)
+    ]));
+
+    card.appendChild(el('div', { class: 'navbtns' }, [
+      el('span'),
+      el('button', {
+        class: 'btn small danger', text: 'Delete object',
+        onclick: function () {
+          if (!confirm('Delete ' + (o.name || o.id) + '?')) return;
+          model.objects.splice(i, 1); renderStep(); touched();
+        }
+      })
+    ]));
+    return card;
+  }
+
+  function actionCard(a, i) {
+    var card = el('details', { class: 'card' }, [
+      el('summary', {}, [
+        el('span', { text: (a.id || 'ACT') + ' · ' + (a.name || 'Untitled action') }),
+        el('span', { class: 'sub', text: a.object || '' })
+      ])
+    ]);
+    if (!a.name) card.open = true;
+
+    card.appendChild(fields([
+      { key: 'id', label: 'ID' },
+      { key: 'name', label: 'Action name', hint: 'Imperative verb, e.g. ApproveInvoice.' },
+      { key: 'object', label: 'Primary object', type: 'select', options: [''].concat(objectNames()) },
+      { key: 'actor', label: 'Actor / role & authority', hint: 'Who does it, and under what authority.' },
+      { key: 'trigger', label: 'Trigger', type: 'select', options: TRIGGERS },
+      { key: 'criticality', label: 'Criticality', type: 'select', options: CRITICALITY },
+      { key: 'frequency', label: 'Frequency', placeholder: '200/day' },
+      { key: 'reversible', label: 'Reversible?', placeholder: 'Yes — via ACT-09' },
+      { key: 'pre', label: 'Pre-conditions', type: 'textarea', wide: true },
+      { key: 'post', label: 'Post-conditions (state change)', type: 'textarea', wide: true },
+      { key: 'description', label: 'Description', type: 'textarea', wide: true, hint: 'What it achieves in business terms, and why it exists.' },
+      { key: 'objectsRead', label: 'Objects read' },
+      { key: 'objectsModified', label: 'Objects created / modified' },
+      { key: 'linksChanged', label: 'Links created / broken' },
+      { key: 'rules', label: 'Rules applied', placeholder: 'RULE-01, RULE-04' },
+      { key: 'sla', label: 'SLA / timing' },
+      { key: 'audit', label: 'Audit requirement' },
+      { key: 'steps', label: 'Steps', type: 'textarea', rows: 4, wide: true, hint: 'One step per line — rendered as a numbered list.' },
+      { key: 'acceptance', label: 'Acceptance criteria (draft)', type: 'textarea', rows: 4, wide: true, hint: 'One per line: Given … when … then …' }
+    ], a));
+
+    card.appendChild(repeater(a.failures, [
+      { key: 'condition', label: 'Condition' },
+      { key: 'handling', label: 'Business handling', wide: true }
+    ], { title: 'Failure / exception paths', addLabel: '+ Add path' }));
+
+    card.appendChild(el('div', { class: 'navbtns' }, [
+      el('span'),
+      el('button', {
+        class: 'btn small danger', text: 'Delete action',
+        onclick: function () {
+          if (!confirm('Delete ' + (a.name || a.id) + '?')) return;
+          model.actions.splice(i, 1); renderStep(); touched();
+        }
+      })
+    ]));
+    return card;
+  }
+
+  /* -------------------------------------------------------------- views */
+
+  var navButtons = null;
+  function buildNav() {
+    var nav = document.getElementById('nav');
+    nav.innerHTML = '';
+    navButtons = steps.map(function (s, i) {
+      var count = el('span', { class: 'count' });
+      var btn = el('button', {
+        onclick: function () { goToStep(i); }
+      }, [el('span', { text: s.title }), count]);
+      btn._count = count;
+      nav.appendChild(btn);
+      return btn;
+    });
+  }
+
+  /* Counts change on every keystroke, so update the nav in place — rebuilding it
+     would detach the button under a click that is already in flight. */
+  function renderNav() {
+    if (!navButtons) buildNav();
+    steps.forEach(function (s, i) {
+      var c = s.count();
+      navButtons[i]._count.textContent = c[0] + '/' + c[1];
+      navButtons[i].setAttribute('aria-current', String(i === stepIndex));
+    });
+  }
+
+  function goToStep(i) {
+    stepIndex = i;
+    renderStep(); renderNav();
+    window.scrollTo(0, 0);
+  }
+
+  function renderStep() {
+    var s = steps[stepIndex];
+    var main = document.getElementById('main');
+    main.innerHTML = '';
+    main.appendChild(el('h2', { text: s.title }));
+    s.render().forEach(function (n) { if (n) main.appendChild(n); });
+    main.appendChild(el('div', { class: 'navbtns' }, [
+      stepIndex > 0 ? el('button', {
+        class: 'btn', text: '← ' + steps[stepIndex - 1].title,
+        onclick: function () { goToStep(stepIndex - 1); }
+      }) : el('span'),
+      stepIndex < steps.length - 1 ? el('button', {
+        class: 'btn primary', text: steps[stepIndex + 1].title + ' →',
+        onclick: function () { goToStep(stepIndex + 1); }
+      }) : el('span')
+    ]));
+  }
+
+  function renderChecks() {
+    var checks = OM.validate(model);
+    var passed = checks.filter(function (c) { return c.pass; }).length;
+    document.getElementById('progress').style.width = Math.round(passed / checks.length * 100) + '%';
+    var ul = document.getElementById('checks');
+    ul.innerHTML = '';
+    checks.forEach(function (c) {
+      ul.appendChild(el('li', { class: c.pass ? 'pass' : 'fail' }, [
+        el('span', { class: 'mark', text: c.pass ? '✓' : '!' }),
+        el('span', {}, [
+          el('span', { text: c.label }),
+          !c.pass && c.detail ? el('span', { class: 'detail', text: c.detail }) : null
+        ])
+      ]));
+    });
+  }
+
+  function renderWho() {
+    document.getElementById('who').textContent =
+      (model.meta.customer || 'New document') +
+      (model.meta.domain ? ' — ' + model.meta.domain : '') +
+      ' · ' + model.objects.length + ' objects, ' + model.links.length + ' links, ' + model.actions.length + ' actions';
+  }
+
+  /* ------------------------------------------------------------ export */
+
+  function slug(s) {
+    return String(s || 'ontology').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'ontology';
+  }
+  function download(name, text, type) {
+    var blob = new Blob([text], { type: type });
+    var a = el('a', { href: URL.createObjectURL(blob), download: name });
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+  }
+  function downloadMarkdown() {
+    download(slug(model.meta.customer) + '-business-model.md', OM.toMarkdown(model), 'text/markdown');
+    toast('Markdown downloaded');
+  }
+  function copyMarkdown() {
+    var md = OM.toMarkdown(model);
+    if (navigator.clipboard) navigator.clipboard.writeText(md).then(function () { toast('Copied'); });
+    else toast('Clipboard unavailable — use Download');
+  }
+
+  function toast(msg) {
+    var t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    setTimeout(function () { t.classList.remove('show'); }, 1800);
+  }
+
+  /* -------------------------------------------------------------- wiring */
+
+  document.getElementById('btn-md').onclick = downloadMarkdown;
+  document.getElementById('btn-json').onclick = function () {
+    download(slug(model.meta.customer) + '-ontology.json', JSON.stringify(model, null, 2), 'application/json');
+    toast('JSON downloaded');
+  };
+  document.getElementById('btn-import').onclick = function () { document.getElementById('file').click(); };
+  document.getElementById('file').onchange = function (e) {
+    var f = e.target.files[0];
+    if (!f) return;
+    var r = new FileReader();
+    r.onload = function () {
+      try {
+        var data = /\.json$/i.test(f.name) ? JSON.parse(r.result) : OM.extractModel(r.result);
+        model = Object.assign(OM.emptyModel(), data);
+        stepIndex = 0; renderAll(); touched(); toast('Imported ' + f.name);
+      } catch (err) { alert('Could not import: ' + err.message); }
+      e.target.value = '';
+    };
+    r.readAsText(f);
+  };
+  document.getElementById('btn-reset').onclick = function () {
+    if (!confirm('Discard the current document and start over?')) return;
+    model = OM.emptyModel(); stepIndex = 0; renderAll(); touched();
+  };
+  document.getElementById('btn-example').onclick = function () {
+    if (!confirm('Replace the current document with the worked example?')) return;
+    fetch('example-ontology.json').then(function (r) { return r.json(); }).then(function (data) {
+      model = Object.assign(OM.emptyModel(), data); stepIndex = 0; renderAll(); touched();
+    }).catch(function () {
+      alert('Example unavailable. When opening this file directly from disk, some browsers block local fetches — serve the folder (e.g. "npx serve") or import example-ontology.json with the Import button.');
+    });
+  };
+
+  function renderAll() { renderNav(); renderStep(); renderChecks(); renderWho(); }
+  renderAll();
+})();
+</script>
+</body>
+</html>
