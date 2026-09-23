@@ -24,10 +24,10 @@
         "approvedBy": ""
       },
       "context": {
-        "whatBusinessDoes": "ILLUSTRATIVE EXAMPLE — shows how sub-domains structure an ontology. It is not an official or validated CMS model; confirm every definition with CPI SMEs before relying on it.\n\nThe Center for Program Integrity protects Medicaid and CHIP spending by measuring how much is paid improperly, checking that states determine eligibility correctly, and making sure the right people are enrolled. Each of those responsibilities is run by a different team with its own SMEs, cadence and vocabulary, which is why the model is split into sub-domains.",
+        "whatBusinessDoes": "ILLUSTRATIVE EXAMPLE — shows how sub-domains structure an ontology. It is not an official or validated CMS model; confirm every definition with CPI SMEs before relying on it.\n\nThe Center for Program Integrity protects Medicaid and CHIP spending by measuring how much is paid improperly, checking that states determine eligibility correctly, and auditing whether beneficiaries were eligible for the coverage they received. Each of those responsibilities is run by a different team with its own SMEs, cadence and vocabulary, which is why the model is split into sub-domains.",
         "scope": [
           {
-            "inScope": "Improper payment measurement, eligibility quality control, beneficiary eligibility and enrollment",
+            "inScope": "Improper payment measurement, eligibility quality control, beneficiary eligibility audit",
             "outOfScope": "Provider enrollment and screening",
             "reason": "Separate program with its own discovery track"
           }
@@ -77,9 +77,9 @@
         {
           "id": "SD-03",
           "code": "BEA",
-          "name": "Beneficiary Eligibility & Enrollment",
-          "description": "How individuals apply, are determined eligible, and are enrolled in Medicaid or CHIP.",
-          "smes": "<Eligibility policy lead>; <Enrollment operations lead>",
+          "name": "Beneficiary Eligibility Audit",
+          "description": "Audits whether beneficiaries met eligibility requirements for the coverage they received, and whether the state's eligibility determinations were supported.",
+          "smes": "<BEA audit lead>; <Eligibility policy SME>",
           "owner": "<BEA program team>"
         }
       ],
@@ -370,10 +370,10 @@
             "SD-03",
             "SD-02"
           ],
-          "description": "A state's decision on whether an individual qualifies for coverage. Made in BEA and examined in MEQC, so it belongs to both.",
+          "description": "A state's decision on whether an individual qualifies for coverage. Audited in BEA and reviewed in MEQC, so it belongs to both.",
           "type": "Core",
           "aka": "",
-          "owner": "<Eligibility policy lead>",
+          "owner": "<BEA audit lead>",
           "systemOfRecord": "<State eligibility system>",
           "identifier": "Determination ID",
           "volume": "",
@@ -426,7 +426,7 @@
           "description": "An individual enrolled in Medicaid or CHIP.",
           "type": "Core",
           "aka": "",
-          "owner": "<Enrollment operations lead>",
+          "owner": "<BEA audit lead>",
           "systemOfRecord": "<State eligibility system>",
           "identifier": "Beneficiary ID",
           "volume": "",
@@ -652,12 +652,12 @@
         },
         {
           "id": "ACT-05",
-          "name": "EnrollBeneficiary",
+          "name": "AuditBeneficiaryEligibility",
           "object": "Beneficiary",
-          "actor": "<State enrollment system>",
-          "trigger": "System",
-          "pre": "Determination is Approved",
-          "post": "Beneficiary has active coverage",
+          "actor": "<BEA auditor>",
+          "trigger": "Manual",
+          "pre": "Beneficiary selected for audit; determination and evidence available",
+          "post": "Audit outcome recorded: eligible, ineligible or undetermined",
           "frequency": "",
           "criticality": "High",
           "description": "",
