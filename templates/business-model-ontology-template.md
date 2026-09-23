@@ -12,6 +12,10 @@
 > **How to use it.** Fill in Part 1 (Context) and Part 2 (Glossary) first, then model the
 > Objects (Part 3), the Links between them (Part 4), and the Actions taken on them (Part 5).
 > Copy the "Object Template" block once per object. Delete guidance blockquotes before sharing.
+>
+> **Sub-domains.** If the domain in scope breaks into distinct areas with their own SMEs, list
+> them in 1.2 and tag every Object with the sub-domain(s) it belongs to. Links and Actions inherit
+> sub-domains from their Objects, so a reviewer can filter the whole model down to one area.
 
 | Field | Value |
 |---|---|
@@ -33,19 +37,55 @@
 
 `<...>`
 
-### 1.2 Scope of this ontology
+### 1.2 Sub-domains
+> The distinct areas within the domain in scope — each usually with its own business SMEs,
+> processes and vocabulary. Give each a short, stable **code**; Objects are tagged with codes,
+> so keep them short and never reuse one. Skip this section if the domain is a single area.
+>
+> *Example:* domain **Center for Program Integrity (CPI)** → sub-domains `PERM` (Payment Error
+> Rate Measurement), `MEQC` (Medicaid Eligibility Quality Control), …
+
+| ID | Code | Sub-domain | Description | Business SMEs | Business owner |
+|---|---|---|---|---|---|
+| SD-01 | `PERM` | `<Payment Error Rate Measurement>` | `<What this area is responsible for>` | `<name — role; name — role>` | `<role / team>` |
+| SD-02 | `MEQC` | `<Medicaid Eligibility Quality Control>` | `<...>` | `<...>` | `<...>` |
+| SD-03 | `<CODE>` | `<...>` | `<...>` | `<...>` | `<...>` |
+
+#### 1.2.1 Sub-domain map
+> Which Objects, Actions and Links belong to each sub-domain. An Object may belong to more than
+> one sub-domain — shared Objects are where the areas meet, so they deserve the most scrutiny.
+> A **boundary link** joins Objects that share no sub-domain: it is an integration point between
+> areas and must be agreed by the SMEs on both sides.
+
+| Sub-domain | Objects | Actions | Links within | Boundary links |
+|---|---|---|---|---|
+| `PERM` | `<OBJ-01, OBJ-02>` | `<ACT-01>` | `<LNK-01>` | `<LNK-04 (↔ MEQC)>` |
+
+#### 1.2.2 Reviewing one sub-domain at a time
+> To walk one group of SMEs through only their part of the model, filter by sub-domain rather
+> than editing this document:
+>
+> - **Ontology Builder app** — pick one or more sub-domains in the filter bar; every step, the
+>   preview and the export narrow to match, and the bar shows who the reviewing SMEs are.
+> - **CLI** — `node apps/ontology-builder/cli.js build <file> --subdomain PERM,MEQC -o perm-meqc.md`
+>   writes a filtered view for that session.
+> - **By hand** — search for `Sub-domains:` in Part 3, and for the code in the index tables.
+>
+> A filtered view is a reading aid, not a new version: make changes in the full document.
+
+### 1.3 Scope of this ontology
 
 | In scope | Out of scope (and why) |
 |---|---|
 | `<process / capability>` | `<process / capability — reason>` |
 
-### 1.3 Business outcomes this engagement must move
+### 1.4 Business outcomes this engagement must move
 
 | # | Outcome | Current measure | Target | Owner |
 |---|---|---|---|---|
 | O1 | `<e.g. reduce quote turnaround>` | `<4 days>` | `<4 hours>` | `<name>` |
 
-### 1.4 Source material
+### 1.5 Source material
 > Where this model came from — so a reviewer can audit any claim.
 
 | Source | Type | Date | Notes |
@@ -70,7 +110,9 @@
 - **Objects** are singular `PascalCase` nouns (`PurchaseOrder`, not `purchase_orders`).
 - **Links** are verb phrases read source → target (`Customer *places* Order`).
 - **Actions** are imperative verbs (`ApproveInvoice`, not `InvoiceApproval`).
-- IDs: Objects `OBJ-nn`, Links `LNK-nn`, Actions `ACT-nn`, Rules `RULE-nn`, Events `EVT-nn`.
+- **Sub-domains** are referenced by their short upper-case code (`PERM`), never their full name.
+- IDs: Sub-domains `SD-nn`, Objects `OBJ-nn`, Links `LNK-nn`, Actions `ACT-nn`, Rules `RULE-nn`,
+  Events `EVT-nn`.
 - `<Your additions>`
 
 ---
@@ -84,11 +126,11 @@
 
 ### 3.1 Object index
 
-| ID | Object | One-line description | Type | Owner (business) | System of record | Est. volume | Status |
-|---|---|---|---|---|---|---|---|
-| OBJ-01 | `<Customer>` | `<...>` | Core | `<Sales Ops>` | `<Salesforce>` | `<12k>` | Approved |
-| OBJ-02 | `<Order>` | `<...>` | Core | `<...>` | `<...>` | `<...>` | Draft |
-| OBJ-03 | `<...>` | `<...>` | Supporting / Reference | `<...>` | `<...>` | `<...>` | Draft |
+| ID | Object | Sub-domain(s) | One-line description | Type | Owner (business) | System of record | Est. volume | Status |
+|---|---|---|---|---|---|---|---|---|
+| OBJ-01 | `<Customer>` | `<PERM, MEQC>` | `<...>` | Core | `<Sales Ops>` | `<Salesforce>` | `<12k>` | Approved |
+| OBJ-02 | `<Order>` | `<PERM>` | `<...>` | Core | `<...>` | `<...>` | `<...>` | Draft |
+| OBJ-03 | `<...>` | `<CODE>` | `<...>` | Supporting / Reference | `<...>` | `<...>` | `<...>` | Draft |
 
 *Type:* `Core` (the business exists to manage it) · `Supporting` (enables core work) ·
 `Reference` (lookup / classification data) · `External` (mastered outside the customer).
@@ -100,6 +142,10 @@
 > and AI agents parse them.
 
 #### OBJ-nn · `<ObjectName>`
+
+**Sub-domains:** `<CODE>` · `<CODE>`
+> One or more codes from 1.2 — every sub-domain whose SMEs would recognise this Object as theirs.
+> Keep this line directly under the heading: reviewers and agents filter on it.
 
 **Description**
 > Plain-English, 2–5 sentences. What is it, why does the business care, when does an instance
@@ -113,6 +159,7 @@
 | Attribute | Value |
 |---|---|
 | Also known as | `<synonyms>` |
+| Sub-domain(s) | `<PERM, MEQC>` |
 | Type | `Core \| Supporting \| Reference \| External` |
 | Business owner | `<role / team>` |
 | System of record | `<system>` |
@@ -188,13 +235,16 @@ placedBy: CUST-88121   # Link LNK-01 → Customer
 
 ### 4.1 Link index
 
-| ID | Source object | Link (source → target) | Target object | Cardinality | Reverse reading | Required? | Lifecycle rule | Why it matters |
-|---|---|---|---|---|---|---|---|---|
-| LNK-01 | `Customer` | `places` | `Order` | 1 → 0..* | `Order is placed by Customer` | Yes | `<Order cannot exist without Customer>` | `<Drives billing & entitlement>` |
-| LNK-02 | `Order` | `contains` | `OrderLine` | 1 → 1..* | `OrderLine belongs to Order` | Yes | `<Cascade delete>` | `<...>` |
-| LNK-03 | `<...>` | `<...>` | `<...>` | `<0..1 → 0..*>` | `<...>` | `<No>` | `<...>` | `<...>` |
+| ID | Source object | Link (source → target) | Target object | Sub-domain(s) | Cardinality | Reverse reading | Required? | Lifecycle rule | Why it matters |
+|---|---|---|---|---|---|---|---|---|---|
+| LNK-01 | `Customer` | `places` | `Order` | `PERM` | 1 → 0..* | `Order is placed by Customer` | Yes | `<Order cannot exist without Customer>` | `<Drives billing & entitlement>` |
+| LNK-02 | `Order` | `contains` | `OrderLine` | `PERM` | 1 → 1..* | `OrderLine belongs to Order` | Yes | `<Cascade delete>` | `<...>` |
+| LNK-03 | `<...>` | `<...>` | `<...>` | `<PERM ↔ MEQC>` | `<0..1 → 0..*>` | `<...>` | `<No>` | `<...>` | `<...>` |
 
 *Cardinality notation:* `1`, `0..1`, `1..*`, `0..*` — read as *source instances → target instances*.
+
+*Sub-domain(s)* are derived, not chosen: the sub-domains the source and target Objects share.
+When they share none, write `SOURCE ↔ TARGET` — that is a **boundary link** (see 1.2.1).
 
 ### 4.2 Link detail
 > Only for links carrying their own properties, or with non-obvious rules. Copy per link.
@@ -235,11 +285,13 @@ erDiagram
 
 ### 5.1 Action index
 
-| ID | Action | Primary object | Actor / role | Trigger | Pre-conditions | Post-conditions (state change) | Frequency | Criticality |
-|---|---|---|---|---|---|---|---|---|
-| ACT-01 | `CreateOrder` | `Order` | `<Sales Rep>` | `<Customer request>` | `<Customer is active>` | `<Order in Draft>` | `<200/day>` | High |
-| ACT-02 | `ApproveOrder` | `Order` | `<Sales Manager>` | `<Submission>` | `<Value > £10k>` | `<Order Approved; EVT-02 raised>` | `<40/day>` | High |
-| ACT-03 | `<...>` | `<...>` | `<...>` | `<Scheduled \| Manual \| System \| External>` | `<...>` | `<...>` | `<...>` | `<Low>` |
+| ID | Action | Primary object | Sub-domain(s) | Actor / role | Trigger | Pre-conditions | Post-conditions (state change) | Frequency | Criticality |
+|---|---|---|---|---|---|---|---|---|---|
+| ACT-01 | `CreateOrder` | `Order` | `PERM` | `<Sales Rep>` | `<Customer request>` | `<Customer is active>` | `<Order in Draft>` | `<200/day>` | High |
+| ACT-02 | `ApproveOrder` | `Order` | `PERM` | `<Sales Manager>` | `<Submission>` | `<Value > £10k>` | `<Order Approved; EVT-02 raised>` | `<40/day>` | High |
+| ACT-03 | `<...>` | `<...>` | `<CODE>` | `<...>` | `<Scheduled \| Manual \| System \| External>` | `<...>` | `<...>` | `<...>` | `<Low>` |
+
+*Sub-domain(s)* are inherited from the primary Object.
 
 ### 5.2 Action detail
 > Copy per significant Action. Skip for trivial CRUD that the index already covers.
@@ -303,7 +355,7 @@ erDiagram
 ## Part 8 — Coverage & Traceability
 
 ### 8.1 Outcome → ontology coverage
-> Every business outcome in 1.3 should be reachable through Objects and Actions defined here.
+> Every business outcome in 1.4 should be reachable through Objects and Actions defined here.
 
 | Outcome | Objects involved | Actions involved | Gap? |
 |---|---|---|---|
@@ -321,6 +373,9 @@ erDiagram
 ## Part 9 — Review & Sign-off
 
 ### 9.1 Validation checklist
+- [ ] Every sub-domain has a unique code, a name, and at least one business SME.
+- [ ] Every Object is tagged with at least one sub-domain from 1.2 (if sub-domains are used).
+- [ ] Every boundary link has been reviewed with the SMEs of both sub-domains.
 - [ ] Every Object has a description, an owner, and a system of record.
 - [ ] Every Object has a unique identifier property.
 - [ ] Every term used in an Object or Action description appears in the Glossary (2.1).
@@ -329,7 +384,7 @@ erDiagram
 - [ ] Every Action names its actor, trigger, and post-conditions.
 - [ ] Every Object with a lifecycle has states, and each state is entered by a named Action.
 - [ ] At least one concrete example exists per Core object.
-- [ ] Every business outcome in 1.3 is covered in 8.1.
+- [ ] Every business outcome in 1.4 is covered in 8.1.
 - [ ] All open questions are assigned an owner and a due date.
 - [ ] A customer SME has read this document aloud and agreed with the wording.
 
