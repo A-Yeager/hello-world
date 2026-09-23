@@ -31,7 +31,7 @@
   header.top .who { color: var(--muted); font-size: 13px; margin-right: auto; }
   .layout { display: grid; grid-template-columns: 220px minmax(0,1fr) 280px; gap: 20px; padding: 20px; align-items: start; }
   @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } nav.steps { position: static; } aside { position: static; } }
-  nav.steps { position: sticky; top: 70px; display: flex; flex-direction: column; gap: 4px; }
+  nav.steps { position: sticky; top: calc(var(--hh, 58px) + 12px); display: flex; flex-direction: column; gap: 4px; }
   nav.steps button {
     text-align: left; padding: 9px 12px; border-radius: var(--radius); border: 1px solid transparent;
     background: transparent; color: var(--ink); cursor: pointer; font-size: 14px;
@@ -43,7 +43,7 @@
   main { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; min-width: 0; }
   main h2 { margin: 0 0 4px; font-size: 20px; }
   main .lede { color: var(--muted); margin: 0 0 20px; max-width: 70ch; }
-  aside { position: sticky; top: 70px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+  aside { position: sticky; top: calc(var(--hh, 58px) + 12px); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
   aside h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
   .bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin-bottom: 12px; }
   .bar span { display: block; height: 100%; background: var(--ok); transition: width .2s; }
@@ -93,6 +93,30 @@
     background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px;
     max-height: 420px; overflow: auto; font-size: 12px; white-space: pre-wrap; word-break: break-word;
   }
+  .filterbar {
+    flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    padding-top: 10px; border-top: 1px solid var(--line); font-size: 13px;
+  }
+  .filterbar[hidden] { display: none; }
+  .filterbar .lbl { color: var(--muted); font-weight: 600; margin-right: 4px; }
+  .filterbar .smes { color: var(--muted); margin-left: auto; }
+  .filterbar .smes b { color: var(--ink); font-weight: 600; }
+  .chip {
+    font: inherit; font-size: 13px; padding: 4px 11px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+  }
+  .chip:hover { border-color: var(--accent); }
+  .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .tags { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-right: 8px; }
+  .tag { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+  .card > summary .right { display: flex; align-items: center; gap: 4px; }
+  .notice { font-size: 13px; color: var(--muted); padding: 8px 12px; border: 1px dashed var(--line); border-radius: 8px; margin: 0 0 12px; }
+  select.examples { width: auto; max-width: 11em; padding: 5px 8px; font-size: 13px; background: var(--panel); }
+  /* On phones the header wraps to several rows; pinning it would leave little room to work. */
+  @media (max-width: 700px) { header.top { position: static; } }
+  @media (min-width: 701px) {
+    header.top .who { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  }
   .toast {
     position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
     background: var(--ink); color: var(--bg); padding: 8px 16px; border-radius: 999px;
@@ -105,12 +129,13 @@
 <header class="top">
   <h1>Ontology Builder</h1>
   <span class="who" id="who">New document</span>
-  <button class="btn small" id="btn-example">Load example</button>
+  <select class="examples" id="example-select" aria-label="Load an example"><option value="">Load example…</option></select>
   <button class="btn small" id="btn-import">Import .md / .json</button>
   <button class="btn small" id="btn-json">Save .json</button>
   <button class="btn small primary" id="btn-md">Download .md</button>
   <button class="btn small danger" id="btn-reset">Reset</button>
   <input type="file" id="file" accept=".md,.markdown,.json" hidden>
+  <div class="filterbar" id="filterbar" role="toolbar" aria-label="Sub-domain view" hidden></div>
 </header>
 
 <div class="layout">
@@ -126,21 +151,29 @@
 <div class="toast" id="toast"></div>
 
 <script src="ontology-md.js"></script>
+<script src="examples.js"></script>
 <script>
 (function () {
   'use strict';
   var OM = window.OntologyMD;
   var STORAGE_KEY = 'ontology-builder:v1';
 
+  var FILTER_KEY = 'ontology-builder:filter';
+
   var model = load();
   var stepIndex = 0;
+
+  // Sub-domain view: a per-viewer reading aid, so it lives outside the model.
+  var filter = loadFilter();
+  // Items added while a view is active stay visible even before they are tagged.
+  var pinned = new WeakSet();
 
   /* ------------------------------------------------------- persistence */
 
   function load() {
     try {
       var raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return Object.assign(OM.emptyModel(), JSON.parse(raw));
+      if (raw) return OM.normalize(JSON.parse(raw));
     } catch (e) { /* private mode, blocked storage — fall through */ }
     return OM.emptyModel();
   }
@@ -151,7 +184,66 @@
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(model)); } catch (e) {}
     }, 250);
   }
-  function touched() { save(); renderChecks(); renderNav(); renderWho(); }
+  function touched() { save(); renderChecks(); renderNav(); renderWho(); renderFilterBar(); }
+
+  function loadFilter() {
+    try {
+      var f = JSON.parse(localStorage.getItem(FILTER_KEY) || '[]');
+      return Array.isArray(f) ? f : [];
+    } catch (e) { return []; }
+  }
+  function saveFilter() {
+    try { localStorage.setItem(FILTER_KEY, JSON.stringify(filter)); } catch (e) {}
+  }
+  function filtering() { return filter.length > 0; }
+  function setFilter(keys) {
+    filter = keys;
+    pinned = new WeakSet();
+    saveFilter();
+    renderFilterBar(true); renderStep(); renderWho(); renderChecks();
+  }
+  function toggleFilter(key) {
+    var i = filter.indexOf(key);
+    setFilter(i === -1 ? filter.concat([key]) : filter.filter(function (k) { return k !== key; }));
+  }
+  /** Drop filter keys whose sub-domain no longer exists (deleted, or a different document loaded). */
+  function pruneFilter() {
+    var ids = model.subdomains.map(function (sd) { return sd.id; });
+    var next = filter.filter(function (k) { return k === OM.UNTAGGED || ids.indexOf(k) !== -1; });
+    if (next.length !== filter.length) { filter = next; pinned = new WeakSet(); saveFilter(); }
+  }
+  function filterLabel() {
+    return filter.map(function (k) {
+      if (k === OM.UNTAGGED) return 'untagged';
+      var sd = model.subdomains.filter(function (x) { return x.id === k; })[0];
+      return sd ? (sd.code || sd.id) : k;
+    }).join(', ');
+  }
+  function visible(kind, item) {
+    if (!filtering() || pinned.has(item)) return true;
+    if (kind === 'object') return OM.objectMatches(item, filter);
+    if (kind === 'link') return OM.linkMatches(model, item, filter);
+    if (kind === 'action') return OM.actionMatches(model, item, filter);
+    if (kind === 'event') return OM.eventMatches(model, item, filter);
+    return true;
+  }
+  function hiddenNotice(n, noun) {
+    if (!n) return null;
+    return el('p', { class: 'notice', text: n + ' ' + noun + (n === 1 ? ' is' : ' are') +
+      ' hidden by the sub-domain view (' + filterLabel() + '). Choose “All” in the filter bar to see everything.' });
+  }
+  function codeTags(ids) {
+    var wrap = el('span', { class: 'tags' });
+    OM.codesFor(model, ids).forEach(function (c) { wrap.appendChild(el('span', { class: 'tag', text: c })); });
+    return wrap;
+  }
+  /** Object choices for selects, labelled with their sub-domains. */
+  function objectOptions() {
+    return [{ value: '', label: '' }].concat(model.objects.filter(function (o) { return o.name; }).map(function (o) {
+      var codes = OM.codesFor(model, o.subdomains);
+      return { value: o.name, label: o.name + (codes.length ? ' (' + codes.join(', ') + ')' : '') };
+    }));
+  }
 
   /* ------------------------------------------------------ field helpers */
 
@@ -176,7 +268,8 @@
     } else if (def.type === 'select') {
       input = el('select');
       (def.options || []).forEach(function (o) {
-        input.appendChild(el('option', { value: o, text: o }));
+        var isObj = o && typeof o === 'object';
+        input.appendChild(el('option', { value: isObj ? o.value : o, text: isObj ? o.label : o }));
       });
     } else {
       input = el('input', { type: 'text', placeholder: def.placeholder || '' });
@@ -197,7 +290,7 @@
 
   /**
    * Repeating list of simple records.
-   * opts: {title, hint, addLabel, factory, label(item,i)}
+   * opts: {title, hint, addLabel, factory, label(item,i), visible(item), onRemove(item), hiddenNoun}
    */
   function repeater(arr, defs, opts) {
     opts = opts || {};
@@ -205,20 +298,30 @@
     function draw() {
       body.innerHTML = '';
       if (!arr.length) body.appendChild(el('p', { class: 'empty', text: opts.emptyText || 'Nothing added yet.' }));
+      var hidden = 0;
       arr.forEach(function (item, i) {
+        if (opts.visible && !opts.visible(item)) { hidden++; return; }
         var head = el('div', { class: 'rowhead' }, [
           el('span', { class: 'idx', text: (opts.label ? opts.label(item, i) : '#' + (i + 1)) }),
           el('button', {
             class: 'btn small danger', text: 'Remove',
-            onclick: function () { arr.splice(i, 1); draw(); touched(); }
+            onclick: function () {
+              arr.splice(i, 1);
+              if (opts.onRemove) opts.onRemove(item);
+              draw(); touched();
+            }
           })
         ]);
         body.appendChild(el('div', { class: 'row' }, [head, fields(defs, item)]));
       });
+      var note = hiddenNotice(hidden, opts.hiddenNoun || 'items');
+      if (note) body.appendChild(note);
       body.appendChild(el('button', {
         class: 'btn small', text: opts.addLabel || '+ Add',
         onclick: function () {
-          arr.push(opts.factory ? opts.factory() : {});
+          var item = opts.factory ? opts.factory() : {};
+          pinned.add(item);
+          arr.push(item);
           draw(); touched();
         }
       }));
@@ -254,7 +357,7 @@
       count: function () { return [['customer', 'domain', 'owner'].filter(function (k) { return model.meta[k]; }).length, 3]; },
       render: function () {
         return [
-          lede('Who is this ontology for? This header lands at the top of the generated Markdown and tells downstream agents whose business they are modelling.'),
+          lede('Who is this ontology for? This header lands at the top of the generated Markdown and tells downstream agents whose business they are modelling. If the domain splits into areas with their own SMEs, list them as sub-domains below.'),
           fields([
             { key: 'customer', label: 'Customer', hint: 'Legal or trading name.', wide: true },
             { key: 'domain', label: 'Business unit / domain in scope', hint: 'e.g. Commercial Lending — Origination', wide: true },
@@ -264,7 +367,29 @@
             { key: 'status', label: 'Status', type: 'select', options: ['Draft', 'In Review', 'Approved'] },
             { key: 'lastUpdated', label: 'Last updated' },
             { key: 'approvedBy', label: 'Approved by (customer)' }
-          ], model.meta)
+          ], model.meta),
+          repeater(model.subdomains, [
+            { key: 'code', label: 'Code', placeholder: 'PERM', hint: 'Short and stable — objects are tagged with it.' },
+            { key: 'name', label: 'Sub-domain name', placeholder: 'Payment Error Rate Measurement' },
+            { key: 'owner', label: 'Business owner', placeholder: 'Role or team' },
+            { key: 'description', label: 'Description', type: 'textarea', wide: true, hint: 'What this area is responsible for.' },
+            {
+              key: 'smes', label: 'Business SMEs', type: 'textarea', wide: true, placeholder: 'Name — role; Name — role',
+              hint: 'Separate people with semicolons or new lines. Shown in the filter bar when reviewing this sub-domain.'
+            }
+          ], {
+            title: 'Sub-domains', addLabel: '+ Add sub-domain',
+            hint: 'Distinct areas within the domain, each with its own SMEs — e.g. PERM, MEQC and BEA within CPI. Tag objects with them on the Objects step, then use the filter bar to review one area at a time.',
+            emptyText: 'None yet — skip this if the domain is a single area.',
+            factory: function () { return { id: OM.nextId('SD', model.subdomains) }; },
+            label: function (sd) { return sd.id + (sd.code ? ' · ' + sd.code : '') + (sd.name ? ' — ' + sd.name : ''); },
+            onRemove: function (sd) {
+              model.objects.forEach(function (o) {
+                o.subdomains = o.subdomains.filter(function (t) { return t !== sd.id; });
+              });
+              pruneFilter();
+            }
+          })
         ];
       }
     },
@@ -328,15 +453,23 @@
       id: 'objects', title: 'Objects',
       count: function () { return [model.objects.length, model.objects.length || 1]; },
       render: function () {
-        var wrap = el('div');
-        model.objects.forEach(function (o, i) { wrap.appendChild(objectCard(o, i)); });
+        var wrap = el('div'), hidden = 0;
+        model.objects.forEach(function (o, i) {
+          if (!visible('object', o)) { hidden++; return; }
+          wrap.appendChild(objectCard(o, i));
+        });
         return [
           lede('An Object is a thing the business recognises, talks about and tracks over time. Test: can someone point at an instance and say “this one”? If it only describes another thing it is a property; if it only happens it is an Action.'),
+          hiddenNotice(hidden, hidden === 1 ? 'object' : 'objects'),
           wrap,
           el('button', {
             class: 'btn primary', text: '+ Add object',
             onclick: function () {
-              model.objects.push(OM.emptyObject(OM.nextId('OBJ', model.objects)));
+              var o = OM.emptyObject(OM.nextId('OBJ', model.objects));
+              // Adding while viewing a sub-domain almost always means "an object of this sub-domain".
+              o.subdomains = filter.filter(function (k) { return k !== OM.UNTAGGED; });
+              pinned.add(o);
+              model.objects.push(o);
               renderStep(); touched();
             }
           })
@@ -348,12 +481,13 @@
       count: function () { return [model.links.length, model.links.length || 1]; },
       render: function () {
         var names = objectNames();
+        var objOpts = objectOptions();
         return [
-          lede('A Link is a named relationship the business relies on. Name it as a verb phrase that reads naturally in both directions, and say why it matters — a link with no business consequence is an implementation detail, not ontology.'),
+          lede('A Link is a named relationship the business relies on. Name it as a verb phrase that reads naturally in both directions, and say why it matters — a link with no business consequence is an implementation detail, not ontology. Sub-domains come from the two objects; ↔ marks a boundary link between areas.'),
           repeater(model.links, [
-            { key: 'source', label: 'Source object', type: 'select', options: [''].concat(names) },
+            { key: 'source', label: 'Source object', type: 'select', options: objOpts },
             { key: 'verb', label: 'Link (verb phrase)', placeholder: 'places' },
-            { key: 'target', label: 'Target object', type: 'select', options: [''].concat(names) },
+            { key: 'target', label: 'Target object', type: 'select', options: objOpts },
             { key: 'cardinality', label: 'Cardinality', type: 'select', options: CARDINALITIES },
             { key: 'reverse', label: 'Reverse reading', placeholder: 'Order is placed by Customer' },
             { key: 'required', label: 'Required?', type: 'select', options: YESNO },
@@ -365,7 +499,12 @@
             title: 'Links', addLabel: '+ Add link',
             emptyText: names.length ? 'No links yet — add the relationships between your objects.' : 'Define some objects first, then link them.',
             factory: function () { return OM.emptyLink(OM.nextId('LNK', model.links)); },
-            label: function (l) { return [l.id, l.source, l.verb, l.target].filter(Boolean).join(' '); }
+            label: function (l) {
+              var scope = OM.linkScope(model, l).label;
+              return [l.id, l.source, l.verb, l.target].filter(Boolean).join(' ') + (scope ? ' · ' + scope : '');
+            },
+            visible: function (l) { return visible('link', l); },
+            hiddenNoun: 'links'
           })
         ];
       }
@@ -374,15 +513,21 @@
       id: 'actions', title: 'Actions',
       count: function () { return [model.actions.length, model.actions.length || 1]; },
       render: function () {
-        var wrap = el('div');
-        model.actions.forEach(function (a, i) { wrap.appendChild(actionCard(a, i)); });
+        var wrap = el('div'), hidden = 0;
+        model.actions.forEach(function (a, i) {
+          if (!visible('action', a)) { hidden++; return; }
+          wrap.appendChild(actionCard(a, i));
+        });
         return [
           lede('An Action is something a person, system or rule does to an object — the verbs of the business. Each one seeds a use case, an API operation and a set of tests, so pre-conditions and post-conditions matter more than prose.'),
+          hiddenNotice(hidden, hidden === 1 ? 'action' : 'actions'),
           wrap,
           el('button', {
             class: 'btn primary', text: '+ Add action',
             onclick: function () {
-              model.actions.push(OM.emptyAction(OM.nextId('ACT', model.actions)));
+              var a = OM.emptyAction(OM.nextId('ACT', model.actions));
+              pinned.add(a);
+              model.actions.push(a);
               renderStep(); touched();
             }
           }),
@@ -396,7 +541,9 @@
             title: 'Events', addLabel: '+ Add event',
             hint: 'Notable things the business reacts to — useful when an Action in one area triggers work in another.',
             factory: function () { return { id: OM.nextId('EVT', model.events) }; },
-            label: function (e) { return e.id || 'Event'; }
+            label: function (e) { return e.id || 'Event'; },
+            visible: function (e) { return visible('event', e); },
+            hiddenNoun: 'events'
           })
         ];
       }
@@ -432,7 +579,7 @@
         return [c.filter(function (x) { return x.pass; }).length, c.length];
       },
       render: function () {
-        var pre = el('pre', { class: 'preview', text: OM.toMarkdown(model) });
+        var pre = el('pre', { class: 'preview', text: currentMarkdown() });
         return [
           lede('Work the checklist on the right down to zero warnings, then export. The Markdown carries a machine-readable appendix, so agents writing specs and code can parse the model exactly rather than guessing from prose — and you can re-import the same file here to keep editing.'),
           repeater(model.openQuestions, [
@@ -465,11 +612,17 @@
           ], { title: 'Sign-off', addLabel: '+ Add signatory' }),
           el('div', { class: 'sub-section' }, [
             el('h4', { text: 'Generated Markdown' }),
-            el('p', { class: 'hint', text: 'Live preview of the file you will download.' }),
+            el('p', { class: 'hint', text: filtering()
+              ? 'Preview of the ' + filterLabel() + ' view — a reading aid for reviewing with those SMEs. “Download view” exports it; “Download full .md” (and the header button) always write the whole document.'
+              : 'Live preview of the file you will download.' }),
             pre,
             el('div', { class: 'navbtns' }, [
               el('button', { class: 'btn', text: 'Copy to clipboard', onclick: copyMarkdown }),
-              el('button', { class: 'btn primary', text: 'Download .md', onclick: downloadMarkdown })
+              el('span', {}, [
+                filtering() ? el('button', { class: 'btn', text: 'Download ' + filterLabel() + ' view', onclick: downloadView }) : null,
+                document.createTextNode(' '),
+                el('button', { class: 'btn primary', text: filtering() ? 'Download full .md' : 'Download .md', onclick: downloadMarkdown })
+              ])
             ])
           ])
         ];
@@ -482,12 +635,16 @@
   /* ------------------------------------------------------ object cards */
 
   function objectCard(o, i) {
+    var tagSlot = el('span');
+    function paintTags() { tagSlot.innerHTML = ''; tagSlot.appendChild(codeTags(o.subdomains)); }
+    paintTags();
     var summary = el('summary', {}, [
       el('span', { text: (o.id || 'OBJ') + ' · ' + (o.name || 'Untitled object') }),
-      el('span', { class: 'sub', text: (o.properties.length + ' properties') })
+      el('span', { class: 'right' }, [tagSlot, el('span', { class: 'sub', text: (o.properties.length + ' properties') })])
     ]);
     var card = el('details', { class: 'card' }, [summary]);
     if (!o.name) card.open = true;
+    card.appendChild(subdomainPicker(o, paintTags));
 
     card.appendChild(fields([
       { key: 'id', label: 'ID' },
@@ -577,11 +734,38 @@
     return card;
   }
 
+  function subdomainPicker(o, onChange) {
+    var head = [el('h4', { text: 'Sub-domains' })];
+    if (!model.subdomains.length) {
+      return el('div', { class: 'sub-section', style: 'margin-top:0' }, head.concat([
+        el('p', { class: 'hint', text: 'No sub-domains defined. Add them on the Start step if this domain splits into areas with their own SMEs.' })
+      ]));
+    }
+    var chips = el('div', { class: 'tags' });
+    model.subdomains.forEach(function (sd) {
+      var btn = el('button', {
+        class: 'chip', type: 'button', title: sd.name || '', text: sd.code || sd.id,
+        'aria-pressed': String(o.subdomains.indexOf(sd.id) !== -1),
+        onclick: function () {
+          var at = o.subdomains.indexOf(sd.id);
+          if (at === -1) o.subdomains.push(sd.id); else o.subdomains.splice(at, 1);
+          btn.setAttribute('aria-pressed', String(at === -1));
+          onChange(); touched();
+        }
+      });
+      chips.appendChild(btn);
+    });
+    return el('div', { class: 'sub-section', style: 'margin:0 0 14px' }, head.concat([
+      el('p', { class: 'hint', text: 'Every sub-domain whose SMEs would recognise this object as theirs. Objects in more than one are where the areas meet.' }),
+      chips
+    ]));
+  }
+
   function actionCard(a, i) {
     var card = el('details', { class: 'card' }, [
       el('summary', {}, [
         el('span', { text: (a.id || 'ACT') + ' · ' + (a.name || 'Untitled action') }),
-        el('span', { class: 'sub', text: a.object || '' })
+        el('span', { class: 'right' }, [codeTags(OM.actionScope(model, a)), el('span', { class: 'sub', text: a.object || '' })])
       ])
     ]);
     if (!a.name) card.open = true;
@@ -589,7 +773,7 @@
     card.appendChild(fields([
       { key: 'id', label: 'ID' },
       { key: 'name', label: 'Action name', hint: 'Imperative verb, e.g. ApproveInvoice.' },
-      { key: 'object', label: 'Primary object', type: 'select', options: [''].concat(objectNames()) },
+      { key: 'object', label: 'Primary object', type: 'select', options: objectOptions(), hint: 'The action takes this object’s sub-domains.' },
       { key: 'actor', label: 'Actor / role & authority', hint: 'Who does it, and under what authority.' },
       { key: 'trigger', label: 'Trigger', type: 'select', options: TRIGGERS },
       { key: 'criticality', label: 'Criticality', type: 'select', options: CRITICALITY },
@@ -679,6 +863,7 @@
   }
 
   function renderChecks() {
+    document.querySelector('aside h3').textContent = filtering() ? 'Readiness — whole document' : 'Readiness';
     var checks = OM.validate(model);
     var passed = checks.filter(function (c) { return c.pass; }).length;
     document.getElementById('progress').style.width = Math.round(passed / checks.length * 100) + '%';
@@ -696,11 +881,51 @@
   }
 
   function renderWho() {
-    document.getElementById('who').textContent =
+    var who = document.getElementById('who');
+    who.textContent =
       (model.meta.customer || 'New document') +
       (model.meta.domain ? ' — ' + model.meta.domain : '') +
-      ' · ' + model.objects.length + ' objects, ' + model.links.length + ' links, ' + model.actions.length + ' actions';
+      ' · ' + model.objects.length + ' objects, ' + model.links.length + ' links, ' + model.actions.length + ' actions' +
+      (filtering() ? ' · viewing ' + filterLabel() : '');
+    who.title = who.textContent;
   }
+
+  var filterSig = null;
+  /* Rebuilt only when sub-domains, SMEs or the selection change — not on every keystroke elsewhere. */
+  function renderFilterBar(force) {
+    var bar = document.getElementById('filterbar');
+    var untagged = model.objects.filter(function (o) { return !o.subdomains.length; }).length;
+    var sig = JSON.stringify([model.subdomains.map(function (sd) { return [sd.id, sd.code, sd.name, sd.smes]; }), untagged, filter]);
+    if (!force && sig === filterSig) return;
+    filterSig = sig;
+    bar.innerHTML = '';
+    bar.hidden = !model.subdomains.length;
+    if (!bar.hidden) {
+      bar.appendChild(el('span', { class: 'lbl', text: 'Sub-domain view' }));
+      bar.appendChild(chip('All', !filtering(), 'Show the whole model', function () { setFilter([]); }));
+      model.subdomains.forEach(function (sd) {
+        bar.appendChild(chip(sd.code || sd.id, filter.indexOf(sd.id) !== -1, sd.name || '', function () { toggleFilter(sd.id); }));
+      });
+      if (untagged || filter.indexOf(OM.UNTAGGED) !== -1) {
+        bar.appendChild(chip('Untagged (' + untagged + ')', filter.indexOf(OM.UNTAGGED) !== -1,
+          'Objects not yet tagged with a sub-domain', function () { toggleFilter(OM.UNTAGGED); }));
+      }
+      if (filtering()) {
+        var smes = OM.smesFor(model, filter);
+        bar.appendChild(el('span', { class: 'smes' }, smes.length
+          ? [el('span', { text: 'Reviewing with: ' }), el('b', { text: smes.join('; ') })]
+          : [el('span', { text: 'No SMEs recorded for this view' })]));
+      }
+    }
+    syncHeaderHeight();
+  }
+  function chip(label, pressed, title, onclick) {
+    return el('button', { class: 'chip', type: 'button', 'aria-pressed': String(pressed), title: title, text: label, onclick: onclick });
+  }
+  function syncHeaderHeight() {
+    document.documentElement.style.setProperty('--hh', document.querySelector('header.top').offsetHeight + 'px');
+  }
+  window.addEventListener('resize', syncHeaderHeight);
 
   /* ------------------------------------------------------------ export */
 
@@ -717,8 +942,16 @@
     download(slug(model.meta.customer) + '-business-model.md', OM.toMarkdown(model), 'text/markdown');
     toast('Markdown downloaded');
   }
+  function currentMarkdown() {
+    return OM.toMarkdown(filtering() ? OM.filterModel(model, filter) : model);
+  }
+  function downloadView() {
+    download(slug(model.meta.customer) + '-' + slug(filterLabel()) + '-view.md',
+             OM.toMarkdown(OM.filterModel(model, filter)), 'text/markdown');
+    toast(filterLabel() + ' view downloaded');
+  }
   function copyMarkdown() {
-    var md = OM.toMarkdown(model);
+    var md = currentMarkdown();
     if (navigator.clipboard) navigator.clipboard.writeText(md).then(function () { toast('Copied'); });
     else toast('Clipboard unavailable — use Download');
   }
@@ -744,7 +977,14 @@
     r.onload = function () {
       try {
         var data = /\.json$/i.test(f.name) ? JSON.parse(r.result) : OM.extractModel(r.result);
-        model = Object.assign(OM.emptyModel(), data);
+        if (data.view && data.view.filtered) {
+          var ok = confirm('“' + f.name + '” is a filtered sub-domain view (' + (data.view.labels || []).join(', ') +
+            '), not the full document. Importing it replaces your current document with only what is in that view.\n\nImport anyway?');
+          if (!ok) { e.target.value = ''; return; }
+          delete data.view;
+        }
+        model = OM.normalize(data);
+        pruneFilter();
         stepIndex = 0; renderAll(); touched(); toast('Imported ' + f.name);
       } catch (err) { alert('Could not import: ' + err.message); }
       e.target.value = '';
@@ -753,18 +993,25 @@
   };
   document.getElementById('btn-reset').onclick = function () {
     if (!confirm('Discard the current document and start over?')) return;
-    model = OM.emptyModel(); stepIndex = 0; renderAll(); touched();
+    model = OM.emptyModel(); pruneFilter(); stepIndex = 0; renderAll(); touched();
   };
-  document.getElementById('btn-example').onclick = function () {
-    if (!confirm('Replace the current document with the worked example?')) return;
-    fetch('example-ontology.json').then(function (r) { return r.json(); }).then(function (data) {
-      model = Object.assign(OM.emptyModel(), data); stepIndex = 0; renderAll(); touched();
-    }).catch(function () {
-      alert('Example unavailable. When opening this file directly from disk, some browsers block local fetches — serve the folder (e.g. "npx serve") or import example-ontology.json with the Import button.');
-    });
+  // Examples ship as a script (examples.js) rather than fetched JSON, so they load from file:// too.
+  var exampleSelect = document.getElementById('example-select');
+  var examples = window.OntologyExamples || {};
+  Object.keys(examples).forEach(function (key) {
+    exampleSelect.appendChild(el('option', { value: key, text: examples[key].label }));
+  });
+  exampleSelect.onchange = function () {
+    var ex = examples[exampleSelect.value];
+    exampleSelect.value = '';
+    if (!ex || !confirm('Replace the current document with the example “' + ex.label + '”?')) return;
+    model = OM.normalize(ex.model);
+    filter = []; saveFilter(); pinned = new WeakSet();
+    stepIndex = 0; renderAll(); touched();
   };
 
-  function renderAll() { renderNav(); renderStep(); renderChecks(); renderWho(); }
+  function renderAll() { renderFilterBar(true); renderNav(); renderStep(); renderChecks(); renderWho(); }
+  pruneFilter();
   renderAll();
 })();
 </script>
