@@ -14,20 +14,34 @@
  * --subdomain writes a filtered view for reviewing one area with its SMEs: only the
  * Objects tagged with those codes, plus the Links and Actions that touch them. Use
  * "untagged" to list Objects that still need a sub-domain.
+ *
+ * Service Catalog — the services the solution provides, grounded in an ontology:
+ *
+ *   node cli.js catalog build   <catalog> [--ontology <source>] [-o out.md] [--subdomain PERM]
+ *   node cli.js catalog check   <catalog> [--ontology <source>]   # exits 1 if any check fails
+ *   node cli.js catalog extract <catalog> [-o out.json]
+ *   node cli.js catalog service <catalog> SVC-02                  # one service as JSON, for agents
+ *
+ * <catalog> is a catalog .json, a generated catalog .md, or example:<name>. --ontology refreshes
+ * the catalog's ontology snapshot from that ontology before building or checking, so references
+ * are validated against the current model (examples use their own ontology automatically).
  */
 'use strict';
 
 var fs = require('fs');
 var path = require('path');
 var OM = require('./ontology-md.js');
+var SC = require('./service-catalog.js');
+
+function example(file) {
+  var examples = require('./examples.js');
+  var ex = examples[file.slice('example:'.length)];
+  if (!ex) throw new Error('No such example. Available: ' + Object.keys(examples).map(function (k) { return 'example:' + k; }).join(', '));
+  return ex;
+}
 
 function readModel(file) {
-  if (/^example:/.test(file)) {
-    var examples = require('./examples.js');
-    var ex = examples[file.slice('example:'.length)];
-    if (!ex) throw new Error('No such example. Available: ' + Object.keys(examples).map(function (k) { return 'example:' + k; }).join(', '));
-    return OM.normalize(ex.model);
-  }
+  if (/^example:/.test(file)) return OM.normalize(example(file).model);
   if (!fs.existsSync(file)) throw new Error('No such file: ' + file);
   var raw = fs.readFileSync(file, 'utf8');
   var model = OM.normalize(/\.json$/i.test(file) ? JSON.parse(raw) : OM.extractModel(raw));
@@ -35,6 +49,93 @@ function readModel(file) {
     console.error('Warning: ' + file + ' is a filtered sub-domain view, not the full document.');
   }
   return model;
+}
+
+function readCatalog(file) {
+  if (/^example:/.test(file)) {
+    var ex = example(file);
+    if (!ex.catalog) throw new Error(file + ' has no service catalog');
+    return SC.syncOntology(ex.catalog, OM.normalize(ex.model));
+  }
+  if (!fs.existsSync(file)) throw new Error('No such file: ' + file);
+  var raw = fs.readFileSync(file, 'utf8');
+  var data = /\.json$/i.test(file) ? JSON.parse(raw) : SC.extractCatalog(raw);
+  if (!SC.isCatalog(data)) throw new Error(file + ' is not a service catalog (is it an ontology? use the commands without "catalog")');
+  var catalog = SC.normalize(data);
+  if (catalog.view && catalog.view.filtered) {
+    console.error('Warning: ' + file + ' is a filtered sub-domain view, not the full catalog.');
+  }
+  return catalog;
+}
+
+function write(out, text) {
+  if (out) { fs.writeFileSync(out, text); console.error('Wrote ' + path.resolve(out)); }
+  else process.stdout.write(text);
+}
+
+function catalogMain(argv) {
+  var cmd = argv[0], file = argv[1];
+  if (!cmd || !file) { console.error('Usage: node cli.js catalog <build|check|extract|service> <catalog> …'); return 1; }
+  var rest = argv.slice(2);
+  var catalog = readCatalog(file);
+  var ontoArg = flag(rest, ['--ontology']);
+  if (ontoArg) {
+    var onto = readModel(ontoArg);
+    if (!SC.sameCustomer(catalog, onto)) {
+      console.error('Warning: the catalog was grounded in "' + catalog.ontology.customer + '" but ' + ontoArg +
+                    ' is for "' + onto.meta.customer + '". Using it anyway.');
+    }
+    catalog = SC.syncOntology(catalog, onto);
+  }
+  var out = flag(rest, ['-o', '--out']);
+  var sdArg = flag(rest, ['--subdomain', '--subdomains', '-s']);
+
+  if (cmd === 'build') {
+    if (sdArg) catalog = SC.filterCatalog(catalog, SC.resolveSubdomainKeys(catalog, sdArg));
+    write(out, SC.toMarkdown(catalog));
+    return 0;
+  }
+  if (cmd === 'extract') {
+    write(out, JSON.stringify(catalog, null, 2) + '\n');
+    return 0;
+  }
+  if (cmd === 'service') {
+    var id = String(rest[0] || '').toUpperCase();
+    var svc = catalog.services.filter(function (s) { return s.id === id; })[0];
+    if (!svc) throw new Error('No service ' + (id || '(missing id)') + '. Defined: ' + catalog.services.map(function (s) { return s.id; }).join(', '));
+    // Resolve references so an agent gets everything it needs in one payload.
+    var o = catalog.ontology;
+    function find(list, ref) { return list.filter(function (x) { return x.id === ref; })[0] || { id: ref, missing: true }; }
+    write(flag(rest.slice(1), ['-o', '--out']), JSON.stringify({
+      service: svc,
+      resolved: {
+        subdomains: svc.subdomains.map(function (r) { return find(o.subdomains, r); }),
+        objects: svc.objects.map(function (r) { return find(o.objects, r); }),
+        actions: svc.actions.map(function (r) { return find(o.actions, r); }),
+        dependsOn: svc.dependsOn.map(function (r) {
+          var d = find(catalog.services, r);
+          return d.missing ? d : { id: d.id, name: d.name, summary: d.summary, status: d.status };
+        })
+      },
+      catalog: { customer: catalog.meta.customer, version: catalog.meta.version, ontology: { customer: o.customer, version: o.version } }
+    }, null, 2) + '\n');
+    return 0;
+  }
+  if (cmd === 'check') {
+    return report(SC.validate(catalog));
+  }
+  console.error('Unknown catalog command: ' + cmd);
+  return 1;
+}
+
+function report(checks) {
+  var failed = 0;
+  checks.forEach(function (c) {
+    if (!c.pass) failed++;
+    console.log((c.pass ? '  ok  ' : ' FAIL ') + c.label + (c.pass || !c.detail ? '' : ' — ' + c.detail));
+  });
+  console.log('\n' + (checks.length - failed) + '/' + checks.length + ' checks passing');
+  return failed ? 1 : 0;
 }
 
 function flag(args, names) {
@@ -45,7 +146,8 @@ function flag(args, names) {
 function main(argv) {
   var cmd = argv[0];
   var file = argv[1];
-  if (!cmd || !file || ['-h', '--help', 'help'].includes(cmd)) {
+  if (cmd === 'catalog' && !['-h', '--help', 'help'].includes(file)) return catalogMain(argv.slice(1));
+  if (!cmd || !file || ['-h', '--help', 'help'].includes(cmd) || cmd === 'catalog') {
     console.log(fs.readFileSync(__filename, 'utf8').split('*/')[0].split('/*')[1].trim());
     return cmd ? 0 : 1;
   }
@@ -82,14 +184,7 @@ function main(argv) {
   }
 
   if (cmd === 'check') {
-    var checks = OM.validate(model);
-    var failed = 0;
-    checks.forEach(function (c) {
-      if (!c.pass) failed++;
-      console.log((c.pass ? '  ok  ' : ' FAIL ') + c.label + (c.pass || !c.detail ? '' : ' — ' + c.detail));
-    });
-    console.log('\n' + (checks.length - failed) + '/' + checks.length + ' checks passing');
-    return failed ? 1 : 0;
+    return report(OM.validate(model));
   }
 
   console.error('Unknown command: ' + cmd);

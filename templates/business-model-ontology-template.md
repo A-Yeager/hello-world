@@ -13,6 +13,10 @@
 > Objects (Part 3), the Links between them (Part 4), and the Actions taken on them (Part 5).
 > Copy the "Object Template" block once per object. Delete guidance blockquotes before sharing.
 >
+> **Next step.** Once the model is stable, define the services the solution must provide in the
+> [Service Catalog](service-catalog-template.md) — it references this document's sub-domains,
+> Objects and Actions by ID.
+>
 > **Sub-domains.** If the domain in scope breaks into distinct areas with their own SMEs, list
 > them in 1.2 and tag every Object with the sub-domain(s) it belongs to. Links and Actions inherit
 > sub-domains from their Objects, so a reviewer can filter the whole model down to one area.

@@ -1,9 +1,11 @@
 /*
- * examples.js — worked examples for the Ontology Builder.
+ * examples.js — worked examples for the Ontology Builder: each has an ontology (`model`)
+ * and the Service Catalog grounded in it (`catalog`).
  *
  * Loaded with a plain <script> tag (window.OntologyExamples) so "Load example" works even when
  * index.html is opened straight from disk, and require()-able from Node for the CLI:
  *   node cli.js check example:cms-cpi
+ *   node cli.js catalog check example:cms-cpi
  */
 (function (root, data) {
   if (typeof module !== 'undefined' && module.exports) module.exports = data;
@@ -728,6 +730,602 @@
         }
       ],
       "signoff": []
+    },
+    "catalog": {
+      "schemaVersion": 1,
+      "kind": "service-catalog",
+      "meta": {
+        "customer": "Centers for Medicare & Medicaid Services (CMS)",
+        "domain": "Center for Program Integrity (CPI)",
+        "owner": "<PM name, email>",
+        "version": "v0.1",
+        "status": "Draft",
+        "lastUpdated": "2026-09-24",
+        "approvedBy": ""
+      },
+      "purpose": "ILLUSTRATIVE EXAMPLE — not an official or validated CMS service design.\n\nThe services the CPI program-integrity solution provides to the PERM, MEQC and BEA teams. Shared intake and evidence services sit underneath the sub-domain workbenches so each team works from the same state data and case evidence.",
+      "ontology": {
+        "customer": "Centers for Medicare & Medicaid Services (CMS)",
+        "domain": "Center for Program Integrity (CPI)",
+        "version": "v0.1",
+        "subdomains": [
+          {
+            "id": "SD-01",
+            "code": "PERM",
+            "name": "Payment Error Rate Measurement",
+            "smes": "<PERM program lead>; <PERM statistician>"
+          },
+          {
+            "id": "SD-02",
+            "code": "MEQC",
+            "name": "Medicaid Eligibility Quality Control",
+            "smes": "<MEQC program lead>; <State liaison>"
+          },
+          {
+            "id": "SD-03",
+            "code": "BEA",
+            "name": "Beneficiary Eligibility Audit",
+            "smes": "<BEA audit lead>; <Eligibility policy SME>"
+          }
+        ],
+        "objects": [
+          {
+            "id": "OBJ-01",
+            "name": "State",
+            "subdomains": [
+              "SD-01",
+              "SD-02",
+              "SD-03"
+            ]
+          },
+          {
+            "id": "OBJ-02",
+            "name": "ReviewCycle",
+            "subdomains": [
+              "SD-01"
+            ]
+          },
+          {
+            "id": "OBJ-03",
+            "name": "SampledPayment",
+            "subdomains": [
+              "SD-01"
+            ]
+          },
+          {
+            "id": "OBJ-04",
+            "name": "ImproperPaymentFinding",
+            "subdomains": [
+              "SD-01"
+            ]
+          },
+          {
+            "id": "OBJ-05",
+            "name": "EligibilityCaseReview",
+            "subdomains": [
+              "SD-02"
+            ]
+          },
+          {
+            "id": "OBJ-06",
+            "name": "EligibilityDetermination",
+            "subdomains": [
+              "SD-03",
+              "SD-02"
+            ]
+          },
+          {
+            "id": "OBJ-07",
+            "name": "Beneficiary",
+            "subdomains": [
+              "SD-03"
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "id": "ACT-01",
+            "name": "DrawPaymentSample",
+            "object": "SampledPayment"
+          },
+          {
+            "id": "ACT-02",
+            "name": "RecordImproperPaymentFinding",
+            "object": "ImproperPaymentFinding"
+          },
+          {
+            "id": "ACT-03",
+            "name": "ReviewEligibilityCase",
+            "object": "EligibilityCaseReview"
+          },
+          {
+            "id": "ACT-04",
+            "name": "DetermineEligibility",
+            "object": "EligibilityDetermination"
+          },
+          {
+            "id": "ACT-05",
+            "name": "AuditBeneficiaryEligibility",
+            "object": "Beneficiary"
+          }
+        ]
+      },
+      "services": [
+        {
+          "id": "SVC-01",
+          "name": "Payment Sample Selection",
+          "summary": "Draws the statistical sample of Medicaid and CHIP payments reviewed in each PERM cycle.",
+          "description": "Runs once per state per review cycle after the state payment universe is received. Produces a reproducible sample (seed recorded) so statisticians can defend the error rate.",
+          "category": "Application",
+          "type": "Batch / scheduled",
+          "status": "In design",
+          "priority": "Must",
+          "businessOwner": "<PERM program team>",
+          "technicalOwner": "<Data engineering lead>",
+          "consumers": "PERM statistical contractor",
+          "subdomains": [
+            "SD-01"
+          ],
+          "objects": [
+            "OBJ-02",
+            "OBJ-03"
+          ],
+          "actions": [
+            "ACT-01"
+          ],
+          "operations": [
+            {
+              "name": "DrawSample",
+              "description": "Select payments into the sample for a state and cycle",
+              "action": "ACT-01",
+              "object": "OBJ-03",
+              "access": "Create",
+              "inputs": "Cycle ID, state code, payment universe file",
+              "outputs": "Sample list with sample IDs and seed"
+            },
+            {
+              "name": "GetSample",
+              "description": "Retrieve the sample drawn for a state and cycle",
+              "action": "",
+              "object": "OBJ-03",
+              "access": "Read",
+              "inputs": "Cycle ID, state code",
+              "outputs": "Sampled payments"
+            }
+          ],
+          "availability": "99% during sampling windows",
+          "responseTime": "Sample for one state in < 30 min",
+          "throughput": "Up to 17 states per cycle",
+          "supportHours": "Mon–Fri 08:00–18:00 ET",
+          "recovery": "",
+          "dependsOn": [
+            "SVC-05"
+          ],
+          "externalSystems": "",
+          "sensitivity": "Confidential",
+          "security": "",
+          "acceptance": "Given a received payment universe for MD in RY2027, when a sample is drawn, then every sampled payment has a sample ID and the seed is recorded\nGiven the same universe and seed, when the sample is redrawn, then the identical payments are selected",
+          "techSpecs": [
+            {
+              "id": "SPEC-PERM-01",
+              "title": "Payment sampling design",
+              "link": "",
+              "status": "Draft"
+            }
+          ],
+          "workItems": [
+            {
+              "id": "CPI-101",
+              "type": "Epic",
+              "title": "PERM payment sampling",
+              "status": "Backlog",
+              "link": ""
+            }
+          ],
+          "questions": [],
+          "notes": ""
+        },
+        {
+          "id": "SVC-02",
+          "name": "Improper Payment Review Workbench",
+          "summary": "Where reviewers examine each sampled payment and record whether it was paid improperly.",
+          "description": "",
+          "category": "Application",
+          "type": "User-facing (UI)",
+          "status": "Approved",
+          "priority": "Must",
+          "businessOwner": "<PERM program team>",
+          "technicalOwner": "<Application lead>",
+          "consumers": "PERM review contractor",
+          "subdomains": [
+            "SD-01"
+          ],
+          "objects": [
+            "OBJ-03",
+            "OBJ-04"
+          ],
+          "actions": [
+            "ACT-02"
+          ],
+          "operations": [
+            {
+              "name": "ReviewSampledPayment",
+              "description": "Open a sampled payment with its evidence",
+              "action": "",
+              "object": "OBJ-03",
+              "access": "Read",
+              "inputs": "Sample ID",
+              "outputs": "Payment details and evidence"
+            },
+            {
+              "name": "RecordFinding",
+              "description": "Record the review outcome and any amount in error",
+              "action": "ACT-02",
+              "object": "OBJ-04",
+              "access": "Create",
+              "inputs": "Sample ID, error type, amount in error",
+              "outputs": "Finding ID; ImproperPaymentIdentified event"
+            }
+          ],
+          "availability": "99.5% business hours",
+          "responseTime": "< 2 s for interactive screens",
+          "throughput": "",
+          "supportHours": "Mon–Fri 08:00–18:00 ET",
+          "recovery": "",
+          "dependsOn": [
+            "SVC-01",
+            "SVC-06"
+          ],
+          "externalSystems": "",
+          "sensitivity": "PHI",
+          "security": "PHI in claim evidence: role-based access, access logged, no export outside the workbench.",
+          "acceptance": "Given a sampled payment under review, when a reviewer records an insufficient-documentation finding, then a finding with the full paid amount in error is created and EVT-01 is raised\nGiven a finding already exists for a sample, when a second finding is recorded, then it is rejected",
+          "techSpecs": [],
+          "workItems": [],
+          "questions": [
+            {
+              "question": "Do appeals amend a finding in place or supersede it? (OBJ-04)",
+              "owner": "<PERM program lead>",
+              "due": "2026-10-07",
+              "status": "Open"
+            }
+          ],
+          "notes": ""
+        },
+        {
+          "id": "SVC-03",
+          "name": "Eligibility Case Review",
+          "summary": "Lets state MEQC reviewers review an eligibility decision against its evidence and record the outcome.",
+          "description": "",
+          "category": "Application",
+          "type": "User-facing (UI)",
+          "status": "Proposed",
+          "priority": "Must",
+          "businessOwner": "<MEQC program team>",
+          "technicalOwner": "<Application lead>",
+          "consumers": "State MEQC reviewer",
+          "subdomains": [
+            "SD-02"
+          ],
+          "objects": [
+            "OBJ-05",
+            "OBJ-06"
+          ],
+          "actions": [
+            "ACT-03"
+          ],
+          "operations": [
+            {
+              "name": "OpenCaseReview",
+              "description": "Open the determination and evidence for a selected case",
+              "action": "",
+              "object": "OBJ-06",
+              "access": "Read",
+              "inputs": "Determination ID",
+              "outputs": "Determination with evidence"
+            },
+            {
+              "name": "RecordReviewOutcome",
+              "description": "Record whether the decision was correct",
+              "action": "ACT-03",
+              "object": "OBJ-05",
+              "access": "Create",
+              "inputs": "Case review ID, outcome, notes",
+              "outputs": "Completed case review"
+            }
+          ],
+          "availability": "99.5% business hours",
+          "responseTime": "< 2 s for interactive screens",
+          "throughput": "",
+          "supportHours": "Mon–Fri 08:00–18:00 ET",
+          "recovery": "",
+          "dependsOn": [
+            "SVC-05",
+            "SVC-06"
+          ],
+          "externalSystems": "",
+          "sensitivity": "PII",
+          "security": "Reviewers see only their own state’s cases.",
+          "acceptance": "Given a case selected for MEQC review in MD, when an MD reviewer records \"Correct\", then the case review is completed with that outcome\nGiven a reviewer from VA, when they open an MD case, then access is denied",
+          "techSpecs": [],
+          "workItems": [],
+          "questions": [],
+          "notes": ""
+        },
+        {
+          "id": "SVC-04",
+          "name": "Beneficiary Eligibility Audit",
+          "summary": "Runs the audit of whether beneficiaries were eligible for the coverage they received.",
+          "description": "",
+          "category": "Business",
+          "type": "Workflow",
+          "status": "Proposed",
+          "priority": "Should",
+          "businessOwner": "<BEA program team>",
+          "technicalOwner": "<Workflow lead>",
+          "consumers": "BEA auditor",
+          "subdomains": [
+            "SD-03"
+          ],
+          "objects": [
+            "OBJ-06",
+            "OBJ-07"
+          ],
+          "actions": [
+            "ACT-05"
+          ],
+          "operations": [
+            {
+              "name": "AuditEligibility",
+              "description": "Record the audit outcome for a beneficiary",
+              "action": "ACT-05",
+              "object": "OBJ-07",
+              "access": "Read",
+              "inputs": "Beneficiary ID, determination ID, evidence",
+              "outputs": "Audit outcome: eligible, ineligible or undetermined"
+            }
+          ],
+          "availability": "99.5% business hours",
+          "responseTime": "< 2 s for interactive screens",
+          "throughput": "",
+          "supportHours": "Mon–Fri 08:00–18:00 ET",
+          "recovery": "",
+          "dependsOn": [
+            "SVC-05",
+            "SVC-06"
+          ],
+          "externalSystems": "",
+          "sensitivity": "PHI",
+          "security": "",
+          "acceptance": "Given a beneficiary selected for audit with a supported determination, when the auditor completes the audit, then the outcome is Eligible\nGiven missing income evidence, when the audit is completed, then the outcome is Undetermined with the gap recorded",
+          "techSpecs": [],
+          "workItems": [],
+          "questions": [],
+          "notes": ""
+        },
+        {
+          "id": "SVC-05",
+          "name": "State Data Intake",
+          "summary": "Receives payment, eligibility determination and beneficiary data from states and makes it available to every sub-domain.",
+          "description": "Shared by all three sub-domains, so its data contracts need sign-off from PERM, MEQC and BEA SMEs.",
+          "category": "Integration",
+          "type": "Integration / interface",
+          "status": "In build",
+          "priority": "Must",
+          "businessOwner": "CPI (all teams)",
+          "technicalOwner": "<Integration lead>",
+          "consumers": "SVC-01, SVC-03, SVC-04; state Medicaid agencies (senders)",
+          "subdomains": [
+            "SD-01",
+            "SD-02",
+            "SD-03"
+          ],
+          "objects": [
+            "OBJ-01",
+            "OBJ-03",
+            "OBJ-06",
+            "OBJ-07"
+          ],
+          "actions": [
+            "ACT-04"
+          ],
+          "operations": [
+            {
+              "name": "ReceiveStateFile",
+              "description": "Accept and validate a state submission",
+              "action": "",
+              "object": "OBJ-01",
+              "access": "Read",
+              "inputs": "State file (payments or determinations)",
+              "outputs": "Validation report"
+            },
+            {
+              "name": "LoadDeterminations",
+              "description": "Load the eligibility determinations states have made",
+              "action": "ACT-04",
+              "object": "OBJ-06",
+              "access": "Create / update",
+              "inputs": "Validated determination records",
+              "outputs": "Determinations available to MEQC and BEA"
+            }
+          ],
+          "availability": "99.5%",
+          "responseTime": "Files processed within 4 hours of receipt",
+          "throughput": "~2M records per state file",
+          "supportHours": "Mon–Fri 08:00–18:00 ET",
+          "recovery": "",
+          "dependsOn": [],
+          "externalSystems": "<State eligibility systems>\n<State MMIS>",
+          "sensitivity": "PHI",
+          "security": "Files arrive over a secure file transfer; PHI encrypted at rest.",
+          "acceptance": "Given a well-formed MD determinations file, when it is received, then every record loads and a validation report is returned to the state\nGiven a file with a malformed record, when it is received, then the record is rejected with a reason and the rest load",
+          "techSpecs": [
+            {
+              "id": "SPEC-INT-01",
+              "title": "State file interface specification",
+              "link": "",
+              "status": "In review"
+            },
+            {
+              "id": "SPEC-INT-02",
+              "title": "Intake validation rules",
+              "link": "",
+              "status": "Draft"
+            }
+          ],
+          "workItems": [
+            {
+              "id": "CPI-201",
+              "type": "Epic",
+              "title": "State data intake",
+              "status": "In progress",
+              "link": ""
+            },
+            {
+              "id": "CPI-214",
+              "type": "Story",
+              "title": "Validate state determination file layout",
+              "status": "In progress",
+              "link": ""
+            },
+            {
+              "id": "CPI-215",
+              "type": "Story",
+              "title": "Return validation report to the sending state",
+              "status": "To do",
+              "link": ""
+            }
+          ],
+          "questions": [],
+          "notes": ""
+        },
+        {
+          "id": "SVC-06",
+          "name": "Case Evidence Repository",
+          "summary": "Stores the documents and records used as evidence in payment reviews, eligibility reviews and audits.",
+          "description": "",
+          "category": "Data",
+          "type": "API",
+          "status": "Approved",
+          "priority": "Must",
+          "businessOwner": "CPI (all teams)",
+          "technicalOwner": "<Data platform lead>",
+          "consumers": "SVC-02, SVC-03, SVC-04",
+          "subdomains": [
+            "SD-01",
+            "SD-02",
+            "SD-03"
+          ],
+          "objects": [
+            "OBJ-03",
+            "OBJ-05",
+            "OBJ-06"
+          ],
+          "actions": [],
+          "operations": [
+            {
+              "name": "AttachEvidence",
+              "description": "Store a document against a case",
+              "action": "",
+              "object": "OBJ-06",
+              "access": "Create",
+              "inputs": "Case reference, document",
+              "outputs": "Evidence ID"
+            },
+            {
+              "name": "GetEvidence",
+              "description": "Retrieve evidence for a case",
+              "action": "",
+              "object": "OBJ-06",
+              "access": "Read",
+              "inputs": "Case reference",
+              "outputs": "Evidence list"
+            }
+          ],
+          "availability": "99.9%",
+          "responseTime": "< 1 s metadata, < 5 s documents",
+          "throughput": "",
+          "supportHours": "Mon–Fri 08:00–18:00 ET",
+          "recovery": "RPO 15 min / RTO 4 h",
+          "dependsOn": [],
+          "externalSystems": "",
+          "sensitivity": "PHI",
+          "security": "Evidence retained per program retention rules; every access audited.",
+          "acceptance": "Given evidence attached to a PERM sample, when a PERM reviewer requests it, then it is returned\nGiven a MEQC reviewer, when they request PERM-only evidence, then access is denied",
+          "techSpecs": [],
+          "workItems": [],
+          "questions": [],
+          "notes": ""
+        },
+        {
+          "id": "SVC-07",
+          "name": "Error Rate & Review Reporting",
+          "summary": "Reports PERM error rates by cycle and state, and MEQC review outcomes.",
+          "description": "",
+          "category": "Reporting & analytics",
+          "type": "Report / dashboard",
+          "status": "Proposed",
+          "priority": "Should",
+          "businessOwner": "<PERM program team>",
+          "technicalOwner": "<Analytics lead>",
+          "consumers": "CPI leadership, program leads",
+          "subdomains": [
+            "SD-01",
+            "SD-02"
+          ],
+          "objects": [
+            "OBJ-02",
+            "OBJ-04",
+            "OBJ-05"
+          ],
+          "actions": [],
+          "operations": [
+            {
+              "name": "ErrorRateByCycle",
+              "description": "Error rate and amounts in error by state and cycle",
+              "action": "",
+              "object": "OBJ-04",
+              "access": "Read",
+              "inputs": "Cycle ID",
+              "outputs": "Report"
+            }
+          ],
+          "availability": "99.5% business hours",
+          "responseTime": "< 2 s for interactive screens",
+          "throughput": "",
+          "supportHours": "Mon–Fri 08:00–18:00 ET",
+          "recovery": "",
+          "dependsOn": [
+            "SVC-02",
+            "SVC-03"
+          ],
+          "externalSystems": "",
+          "sensitivity": "Confidential",
+          "security": "",
+          "acceptance": "Given findings recorded for RY2027, when the report is run, then the error rate per state matches the findings",
+          "techSpecs": [],
+          "workItems": [],
+          "questions": [],
+          "notes": ""
+        }
+      ],
+      "openQuestions": [
+        {
+          "question": "Should SVC-06 evidence be shared across sub-domains for the same beneficiary, or partitioned per team?",
+          "owner": "<CPI data governance>",
+          "due": "2026-10-14",
+          "impact": "Shapes SVC-06 access model",
+          "status": "Open"
+        }
+      ],
+      "changeLog": [
+        {
+          "version": "v0.1",
+          "date": "2026-09-24",
+          "author": "<PM>",
+          "change": "Illustrative example"
+        }
+      ]
     }
   },
   "northwind": {
@@ -1306,6 +1904,255 @@
           "description": "Credit limits, exposure, and the decision to release or hold orders.",
           "smes": "J. Moore — Credit Control",
           "owner": "Credit Control"
+        }
+      ]
+    },
+    "catalog": {
+      "schemaVersion": 1,
+      "kind": "service-catalog",
+      "meta": {
+        "customer": "Northwind Components Ltd",
+        "domain": "Trade Sales — Order to Cash",
+        "owner": "A. Yeager",
+        "version": "v0.1",
+        "status": "Draft",
+        "lastUpdated": "2026-09-24",
+        "approvedBy": ""
+      },
+      "purpose": "Services that replace the spreadsheet-based order approval process and let credit control auto-release low-risk orders (outcomes O1, O2).",
+      "ontology": {
+        "customer": "Northwind Components Ltd",
+        "domain": "Trade Sales — Order to Cash",
+        "version": "v0.2",
+        "subdomains": [
+          {
+            "id": "SD-01",
+            "code": "SALES",
+            "name": "Sales Operations",
+            "smes": "R. Patel — Head of Sales Ops"
+          },
+          {
+            "id": "SD-02",
+            "code": "CREDIT",
+            "name": "Credit Control",
+            "smes": "J. Moore — Credit Control"
+          }
+        ],
+        "objects": [
+          {
+            "id": "OBJ-01",
+            "name": "Account",
+            "subdomains": [
+              "SD-01",
+              "SD-02"
+            ]
+          },
+          {
+            "id": "OBJ-02",
+            "name": "Order",
+            "subdomains": [
+              "SD-01",
+              "SD-02"
+            ]
+          },
+          {
+            "id": "OBJ-03",
+            "name": "OrderLine",
+            "subdomains": [
+              "SD-01"
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "id": "ACT-01",
+            "name": "CreateOrder",
+            "object": "Order"
+          },
+          {
+            "id": "ACT-03",
+            "name": "ReleaseOrderForFulfilment",
+            "object": "Order"
+          }
+        ]
+      },
+      "services": [
+        {
+          "id": "SVC-01",
+          "name": "Order Capture",
+          "summary": "Lets reps and the trade counter build and commit orders at the account’s agreed prices.",
+          "description": "",
+          "category": "Application",
+          "type": "User-facing (UI)",
+          "status": "In build",
+          "priority": "Must",
+          "businessOwner": "Sales Operations",
+          "technicalOwner": "<Tech lead>",
+          "consumers": "Sales Rep, Trade Counter",
+          "subdomains": [
+            "SD-01"
+          ],
+          "objects": [
+            "OBJ-02",
+            "OBJ-03"
+          ],
+          "actions": [
+            "ACT-01"
+          ],
+          "operations": [
+            {
+              "name": "CreateOrder",
+              "description": "Commit an order with its lines",
+              "action": "ACT-01",
+              "object": "OBJ-02",
+              "access": "Create",
+              "inputs": "Account number, lines",
+              "outputs": "Order in Awaiting credit"
+            }
+          ],
+          "availability": "99.5% business hours",
+          "responseTime": "< 2 s for interactive screens",
+          "throughput": "",
+          "supportHours": "Mon–Fri 08:00–18:00 ET",
+          "recovery": "",
+          "dependsOn": [
+            "SVC-03"
+          ],
+          "externalSystems": "",
+          "sensitivity": "Internal",
+          "security": "",
+          "acceptance": "Given an active account, when a rep commits a two-line order, then it is Awaiting credit and its value is the sum of its lines",
+          "techSpecs": [
+            {
+              "id": "SPEC-ORD-01",
+              "title": "Order capture UI and API",
+              "link": "",
+              "status": "Approved"
+            }
+          ],
+          "workItems": [
+            {
+              "id": "NW-12",
+              "type": "Epic",
+              "title": "Order capture",
+              "status": "In progress",
+              "link": ""
+            },
+            {
+              "id": "NW-31",
+              "type": "Story",
+              "title": "Apply account pricing agreement to order lines",
+              "status": "In progress",
+              "link": ""
+            }
+          ],
+          "questions": [],
+          "notes": ""
+        },
+        {
+          "id": "SVC-02",
+          "name": "Credit Release",
+          "summary": "Releases or holds each committed order against the account’s credit limit, automatically below £5k.",
+          "description": "",
+          "category": "Business",
+          "type": "Event-driven",
+          "status": "In design",
+          "priority": "Must",
+          "businessOwner": "Credit Control",
+          "technicalOwner": "<Tech lead>",
+          "consumers": "Credit Controller; Fulfilment (3PL) via OrderReleased",
+          "subdomains": [
+            "SD-02"
+          ],
+          "objects": [
+            "OBJ-01",
+            "OBJ-02"
+          ],
+          "actions": [
+            "ACT-03"
+          ],
+          "operations": [
+            {
+              "name": "ReleaseOrder",
+              "description": "Decide release or hold for a committed order",
+              "action": "ACT-03",
+              "object": "OBJ-02",
+              "access": "Update",
+              "inputs": "Order number",
+              "outputs": "Released or held order; OrderReleased event"
+            }
+          ],
+          "availability": "99.5% business hours",
+          "responseTime": "Auto-release decision < 1 minute",
+          "throughput": "",
+          "supportHours": "Mon–Fri 08:00–18:00 ET",
+          "recovery": "",
+          "dependsOn": [
+            "SVC-03"
+          ],
+          "externalSystems": "",
+          "sensitivity": "Confidential",
+          "security": "",
+          "acceptance": "Given an account £5,000 below its limit, when a £2,000 order is committed, then it is released automatically",
+          "techSpecs": [],
+          "workItems": [],
+          "questions": [],
+          "notes": ""
+        },
+        {
+          "id": "SVC-03",
+          "name": "Account & Pricing API",
+          "summary": "Serves account status, credit exposure and pricing agreements to the other services.",
+          "description": "",
+          "category": "Data",
+          "type": "API",
+          "status": "Approved",
+          "priority": "Must",
+          "businessOwner": "Sales Operations",
+          "technicalOwner": "<Integration lead>",
+          "consumers": "SVC-01, SVC-02",
+          "subdomains": [
+            "SD-01",
+            "SD-02"
+          ],
+          "objects": [
+            "OBJ-01"
+          ],
+          "actions": [],
+          "operations": [
+            {
+              "name": "GetAccount",
+              "description": "Account status, limit and current exposure",
+              "action": "",
+              "object": "OBJ-01",
+              "access": "Read",
+              "inputs": "Account number",
+              "outputs": "Account"
+            }
+          ],
+          "availability": "99.9%",
+          "responseTime": "< 300 ms",
+          "throughput": "",
+          "supportHours": "Mon–Fri 08:00–18:00 ET",
+          "recovery": "",
+          "dependsOn": [],
+          "externalSystems": "Legacy ERP (SAGE-X3)",
+          "sensitivity": "Confidential",
+          "security": "",
+          "acceptance": "Given an account on hold, when it is requested, then its status is On hold",
+          "techSpecs": [],
+          "workItems": [],
+          "questions": [],
+          "notes": ""
+        }
+      ],
+      "openQuestions": [],
+      "changeLog": [
+        {
+          "version": "v0.1",
+          "date": "2026-09-24",
+          "author": "A. Yeager",
+          "change": "Initial catalog"
         }
       ]
     }

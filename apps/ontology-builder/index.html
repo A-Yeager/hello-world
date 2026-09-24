@@ -117,6 +117,22 @@
   @media (min-width: 701px) {
     header.top .who { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   }
+  nav.modes { display: flex; gap: 2px; background: var(--bg); border: 1px solid var(--line); border-radius: 9px; padding: 2px; }
+  nav.modes button {
+    font: inherit; font-size: 13px; border: 0; background: transparent; color: var(--muted);
+    padding: 5px 12px; border-radius: 7px; cursor: pointer;
+  }
+  nav.modes button[aria-selected="true"] { background: var(--panel); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+  .card > summary + .sub-section { margin: 0 0 14px; }
+  .notice.warn { border-style: solid; border-color: var(--warn); color: var(--ink); }
+  .notice .btn { margin-left: 8px; }
+  .status { font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  table.matrix { border-collapse: collapse; font-size: 13px; width: 100%; }
+  .table-wrap { overflow-x: auto; margin-bottom: 8px; }
+  table.matrix th, table.matrix td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+  table.matrix th { font-weight: 600; color: var(--muted); font-size: 12px; }
+  table.matrix td.dot { text-align: center; color: var(--accent); font-weight: 700; }
+  table.matrix td.gap { color: var(--warn); font-weight: 600; }
   .toast {
     position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
     background: var(--ink); color: var(--bg); padding: 8px 16px; border-radius: 999px;
@@ -128,13 +144,17 @@
 <body>
 <header class="top">
   <h1>Ontology Builder</h1>
+  <nav class="modes" id="modes" role="tablist" aria-label="Module">
+    <button role="tab" data-mode="ontology" aria-selected="true">Business Model</button>
+    <button role="tab" data-mode="catalog" aria-selected="false">Service Catalog</button>
+  </nav>
   <span class="who" id="who">New document</span>
   <select class="examples" id="example-select" aria-label="Load an example"><option value="">Load example…</option></select>
   <button class="btn small" id="btn-import">Import .md / .json</button>
   <button class="btn small" id="btn-json">Save .json</button>
   <button class="btn small primary" id="btn-md">Download .md</button>
   <button class="btn small danger" id="btn-reset">Reset</button>
-  <input type="file" id="file" accept=".md,.markdown,.json" hidden>
+  <input type="file" id="file" accept=".md,.markdown,.json" hidden title="Imports a Business Model or a Service Catalog — the file type is detected">
   <div class="filterbar" id="filterbar" role="toolbar" aria-label="Sub-domain view" hidden></div>
 </header>
 
@@ -151,6 +171,7 @@
 <div class="toast" id="toast"></div>
 
 <script src="ontology-md.js"></script>
+<script src="service-catalog.js"></script>
 <script src="examples.js"></script>
 <script>
 (function () {
@@ -159,9 +180,16 @@
   var STORAGE_KEY = 'ontology-builder:v1';
 
   var FILTER_KEY = 'ontology-builder:filter';
+  var SC = window.ServiceCatalog;
+  var CATALOG_KEY = 'ontology-builder:catalog:v1';
+  var MODE_KEY = 'ontology-builder:mode';
 
   var model = load();
+  var catalog = loadCatalog();
+  // Which module is open: the Business Model (ontology) or the Service Catalog grounded in it.
+  var mode = loadMode();
   var stepIndex = 0;
+  var stepByMode = { ontology: 0, catalog: 0 };
 
   // Sub-domain view: a per-viewer reading aid, so it lives outside the model.
   var filter = loadFilter();
@@ -177,14 +205,44 @@
     } catch (e) { /* private mode, blocked storage — fall through */ }
     return OM.emptyModel();
   }
+  function loadCatalog() {
+    try {
+      var raw = localStorage.getItem(CATALOG_KEY);
+      if (raw) return SC.normalize(JSON.parse(raw));
+    } catch (e) {}
+    return SC.emptyCatalog();
+  }
+  function loadMode() {
+    try { return localStorage.getItem(MODE_KEY) === 'catalog' ? 'catalog' : 'ontology'; } catch (e) { return 'ontology'; }
+  }
   var saveTimer = null;
   function save() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(function () {
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(model)); } catch (e) {}
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(model));
+        localStorage.setItem(CATALOG_KEY, JSON.stringify(catalog));
+      } catch (e) {}
     }, 250);
   }
-  function touched() { save(); renderChecks(); renderNav(); renderWho(); renderFilterBar(); }
+  function touched() { groundCatalog(); save(); renderChecks(); renderNav(); renderWho(); renderFilterBar(); }
+
+  function ontologyHasContent() {
+    return model.subdomains.length > 0 || model.objects.length > 0 || model.actions.length > 0;
+  }
+  /** Whether the open Business Model is the one this catalog belongs to (or the catalog is new). */
+  function catalogMatchesModel() { return SC.sameCustomer(catalog, model); }
+  /**
+   * Keep the catalog's ontology snapshot in step with the open Business Model, in place so the
+   * catalog objects bound to form fields stay the same. Skipped when the two name different
+   * customers — the catalog then keeps the snapshot it was saved with.
+   */
+  function groundCatalog(force) {
+    if (!ontologyHasContent() || (!force && !catalogMatchesModel())) return;
+    catalog.ontology = SC.snapshotOntology(model);
+    if (!catalog.meta.customer) catalog.meta.customer = model.meta.customer;
+    if (!catalog.meta.domain) catalog.meta.domain = model.meta.domain;
+  }
 
   function loadFilter() {
     try {
@@ -196,6 +254,8 @@
     try { localStorage.setItem(FILTER_KEY, JSON.stringify(filter)); } catch (e) {}
   }
   function filtering() { return filter.length > 0; }
+  /** Sub-domains the filter bar offers: the model's, or in the catalog the ones it is grounded in. */
+  function subdomainSource() { return mode === 'catalog' ? catalog.ontology.subdomains : model.subdomains; }
   function setFilter(keys) {
     filter = keys;
     pinned = new WeakSet();
@@ -208,14 +268,14 @@
   }
   /** Drop filter keys whose sub-domain no longer exists (deleted, or a different document loaded). */
   function pruneFilter() {
-    var ids = model.subdomains.map(function (sd) { return sd.id; });
+    var ids = subdomainSource().map(function (sd) { return sd.id; });
     var next = filter.filter(function (k) { return k === OM.UNTAGGED || ids.indexOf(k) !== -1; });
     if (next.length !== filter.length) { filter = next; pinned = new WeakSet(); saveFilter(); }
   }
   function filterLabel() {
     return filter.map(function (k) {
       if (k === OM.UNTAGGED) return 'untagged';
-      var sd = model.subdomains.filter(function (x) { return x.id === k; })[0];
+      var sd = subdomainSource().filter(function (x) { return x.id === k; })[0];
       return sd ? (sd.code || sd.id) : k;
     }).join(', ');
   }
@@ -225,6 +285,7 @@
     if (kind === 'link') return OM.linkMatches(model, item, filter);
     if (kind === 'action') return OM.actionMatches(model, item, filter);
     if (kind === 'event') return OM.eventMatches(model, item, filter);
+    if (kind === 'service') return SC.serviceMatches(item, filter);
     return true;
   }
   function hiddenNotice(n, noun) {
@@ -351,7 +412,7 @@
 
   /* --------------------------------------------------------- the steps */
 
-  var steps = [
+  var ontologySteps = [
     {
       id: 'start', title: 'Start',
       count: function () { return [['customer', 'domain', 'owner'].filter(function (k) { return model.meta[k]; }).length, 3]; },
@@ -630,6 +691,8 @@
     }
   ];
 
+  var steps = mode === 'catalog' ? catalogSteps() : ontologySteps;
+
   function lede(t) { return el('p', { class: 'lede', text: t }); }
 
   /* ------------------------------------------------------ object cards */
@@ -810,6 +873,396 @@
     return card;
   }
 
+  /* ---------------------------------------------------- service catalog */
+
+  var SPEC_STATUS = ['Draft', 'In review', 'Approved', 'Superseded'];
+  var WORK_STATUS = ['Backlog', 'To do', 'In progress', 'In review', 'Done', 'Blocked'];
+
+  function catalogSteps() {
+    return [
+      {
+        id: 'cat-overview', title: 'Overview',
+        count: function () { return [['customer', 'domain', 'owner'].filter(function (k) { return catalog.meta[k]; }).length, 3]; },
+        render: function () {
+          return [
+            lede('The Service Catalog lists the services the IT solution must provide to the business. Each service is tied to the sub-domains that use it, grounded in the Business Model’s Objects and Actions, and traced to the tech specs and work items that deliver it — so an agent can go from a service ID to everything it needs to build it.'),
+            groundingNotice(),
+            fields([
+              { key: 'customer', label: 'Customer', wide: true },
+              { key: 'domain', label: 'Business unit / domain in scope', wide: true },
+              { key: 'owner', label: 'Catalog owner', hint: 'Usually the PM or solution architect.' },
+              { key: 'version', label: 'Version' },
+              { key: 'status', label: 'Status', type: 'select', options: ['Draft', 'In Review', 'Approved'] },
+              { key: 'lastUpdated', label: 'Last updated' },
+              { key: 'approvedBy', label: 'Approved by (customer)' }
+            ], catalog.meta),
+            fields([{
+              key: 'purpose', label: 'Purpose & scope', type: 'textarea', rows: 5, wide: true,
+              hint: 'What this catalog covers — which release, which programme — and what it deliberately leaves out.'
+            }], catalog)
+          ];
+        }
+      },
+      {
+        id: 'cat-services', title: 'Services',
+        count: function () { return [catalog.services.length, catalog.services.length || 1]; },
+        render: function () {
+          var wrap = el('div'), hidden = 0;
+          catalog.services.forEach(function (sv, i) {
+            if (!visible('service', sv)) { hidden++; return; }
+            wrap.appendChild(serviceCard(sv, i));
+          });
+          return [
+            lede('A service is a capability the solution provides to the business — a workbench, an API, an integration, a report. Tag the sub-domains that use it, then ground it in the Objects it manages and the Actions it implements. Delivery links go on the next step.'),
+            groundingNotice(true),
+            hiddenNotice(hidden, hidden === 1 ? 'service' : 'services'),
+            wrap,
+            el('button', {
+              class: 'btn primary', text: '+ Add service',
+              onclick: function () {
+                var sv = SC.emptyService(SC.nextId('SVC', catalog.services));
+                sv.subdomains = filter.filter(function (k) { return k !== OM.UNTAGGED; });
+                pinned.add(sv);
+                catalog.services.push(sv);
+                renderStep(); touched();
+              }
+            })
+          ];
+        }
+      },
+      {
+        id: 'cat-delivery', title: 'Delivery',
+        count: function () {
+          var traced = catalog.services.filter(function (sv) { return sv.techSpecs.length || sv.workItems.length; }).length;
+          return [traced, catalog.services.length || 1];
+        },
+        render: function () {
+          var wrap = el('div'), hidden = 0;
+          catalog.services.forEach(function (sv) {
+            if (!visible('service', sv)) { hidden++; return; }
+            wrap.appendChild(deliveryCard(sv));
+          });
+          return [
+            lede('Link each service to the technical specs that design it and the work items (epics, stories, tasks) that build it. Use the keys from your tracker — CPI-214, SPEC-INT-01 — so agents and people can follow a service from the business need to the code.'),
+            hiddenNotice(hidden, hidden === 1 ? 'service' : 'services'),
+            catalog.services.length ? wrap : el('p', { class: 'empty', text: 'Add services first.' })
+          ];
+        }
+      },
+      {
+        id: 'cat-coverage', title: 'Coverage',
+        count: function () {
+          var acts = catalog.ontology.actions;
+          return [acts.filter(function (a) { return SC.servicesForAction(catalog, a.id).length; }).length, acts.length || 1];
+        },
+        render: function () { return coverageView(); }
+      },
+      {
+        id: 'cat-review', title: 'Review & export',
+        count: function () {
+          var c = SC.validate(catalog);
+          return [c.filter(function (x) { return x.pass; }).length, c.length];
+        },
+        render: function () {
+          return [
+            lede('Work the checklist on the right down to zero warnings, then export. The Markdown carries the catalog as JSON in Appendix A, with the ontology entries it references, so an agent can pick up a single service and build it.'),
+            repeater(catalog.openQuestions, [
+              { key: 'question', label: 'Question', wide: true },
+              { key: 'owner', label: 'Owner' },
+              { key: 'due', label: 'Due', placeholder: 'YYYY-MM-DD' },
+              { key: 'impact', label: 'Impact if unresolved' },
+              { key: 'status', label: 'Status', type: 'select', options: QSTATUS }
+            ], { title: 'Open questions', addLabel: '+ Add question', hint: 'Service-level questions are folded in automatically. Mention SVC-nn IDs so sub-domain views include the right questions.' }),
+            repeater(catalog.changeLog, [
+              { key: 'version', label: 'Version' },
+              { key: 'date', label: 'Date', placeholder: 'YYYY-MM-DD' },
+              { key: 'author', label: 'Author' },
+              { key: 'change', label: 'Change', wide: true }
+            ], { title: 'Change log', addLabel: '+ Add entry', factory: function () { return { date: OM.today() }; } }),
+            previewSection()
+          ];
+        }
+      }
+    ];
+  }
+
+  /** Explains where the catalog's sub-domains, objects and actions come from, and warns when they can't. */
+  function groundingNotice(brief) {
+    var o = catalog.ontology;
+    if (!SC.hasOntology(o)) {
+      return el('p', { class: 'notice warn', text: 'No Business Model to ground this catalog in yet. Build it in the Business Model module (or load an example) — services pick their sub-domains, Objects and Actions from it.' });
+    }
+    if (ontologyHasContent() && !catalogMatchesModel()) {
+      return el('p', { class: 'notice warn' }, [
+        el('span', { text: 'This catalog belongs to “' + o.customer + '”, but the open Business Model is “' + (model.meta.customer || 'unnamed') +
+          '”. Services keep the sub-domains, Objects and Actions saved with the catalog. Import the matching Business Model, or re-ground the catalog in the open one.' }),
+        el('button', {
+          class: 'btn small', text: 'Re-ground in open model',
+          onclick: function () {
+            if (!confirm('Replace this catalog’s references with “' + (model.meta.customer || 'unnamed') + '”? IDs that don’t exist there will show as not found.')) return;
+            groundCatalog(true); renderStep(); touched();
+          }
+        })
+      ]);
+    }
+    if (brief) return null;
+    return el('p', { class: 'notice', text: 'Grounded in the Business Model for ' + (o.customer || 'this customer') + ' — ' +
+      o.subdomains.length + ' sub-domains, ' + o.objects.length + ' objects, ' + o.actions.length + ' actions. It stays in step as you edit the model.' });
+  }
+
+  /** Toggle chips that add/remove values in an array. */
+  function chipSet(options, arr, onChange, emptyText) {
+    if (!options.length) return el('p', { class: 'hint', text: emptyText || 'Nothing to choose from yet.' });
+    var wrap = el('div', { class: 'tags' });
+    options.forEach(function (opt) {
+      var b = el('button', {
+        class: 'chip', type: 'button', text: opt.label, title: opt.title || '',
+        'aria-pressed': String(arr.indexOf(opt.value) !== -1),
+        onclick: function () {
+          var at = arr.indexOf(opt.value);
+          if (at === -1) arr.push(opt.value); else arr.splice(at, 1);
+          b.setAttribute('aria-pressed', String(at === -1));
+          if (onChange) onChange();
+          touched();
+        }
+      });
+      wrap.appendChild(b);
+    });
+    return wrap;
+  }
+  function subSection(title, hint, body) {
+    return el('div', { class: 'sub-section' }, [el('h4', { text: title }), hint ? el('p', { class: 'hint', text: hint }) : null].concat(body));
+  }
+  function catCodes(ids) {
+    var wrap = el('span', { class: 'tags' });
+    SC.codesFor(catalog, ids).forEach(function (c) { wrap.appendChild(el('span', { class: 'tag', text: c })); });
+    return wrap;
+  }
+  function refOptions(list, blank) {
+    var opts = list.map(function (x) { return { value: x.id, label: x.id + ' ' + (x.name || '') }; });
+    return blank ? [{ value: '', label: '' }].concat(opts) : opts;
+  }
+
+  function serviceCard(sv, i) {
+    var o = catalog.ontology;
+    var tagSlot = el('span');
+    function paintTags() { tagSlot.innerHTML = ''; tagSlot.appendChild(catCodes(sv.subdomains)); }
+    paintTags();
+    var card = el('details', { class: 'card' }, [el('summary', {}, [
+      el('span', { text: (sv.id || 'SVC') + ' · ' + (sv.name || 'Untitled service') }),
+      el('span', { class: 'right' }, [tagSlot, el('span', { class: 'status', text: sv.status })])
+    ])]);
+    if (!sv.name) card.open = true;
+
+    card.appendChild(subSection('Used by sub-domains', 'Every sub-domain whose people or processes will use this service.', [
+      chipSet(o.subdomains.map(function (sd) { return { value: sd.id, label: sd.code || sd.id, title: sd.name }; }),
+        sv.subdomains, paintTags, 'No sub-domains in the Business Model. Add them there if the domain splits into areas.')
+    ]));
+
+    card.appendChild(fields([
+      { key: 'id', label: 'ID' },
+      { key: 'name', label: 'Service name', hint: 'What the business would call it, e.g. Eligibility Case Review.' },
+      { key: 'category', label: 'Category', type: 'select', options: SC.CATEGORIES },
+      { key: 'type', label: 'Type', type: 'select', options: SC.SERVICE_TYPES },
+      { key: 'status', label: 'Status', type: 'select', options: SC.STATUSES },
+      { key: 'priority', label: 'Priority', type: 'select', options: SC.PRIORITIES },
+      { key: 'summary', label: 'Summary', wide: true, hint: 'One sentence: what the service does for the business.' },
+      { key: 'description', label: 'Description', type: 'textarea', wide: true },
+      { key: 'businessOwner', label: 'Business owner' },
+      { key: 'technicalOwner', label: 'Technical owner' },
+      { key: 'consumers', label: 'Consumers (roles / systems)' },
+      { key: 'sensitivity', label: 'Data sensitivity', type: 'select', options: SENSITIVITY }
+    ], sv));
+
+    card.appendChild(subSection('Grounding in the Business Model',
+      'The Objects this service manages or exposes, and the Actions it implements. This is what keeps generated specs and code tied to the business model.', [
+        el('label', { text: 'Objects' }),
+        chipSet(o.objects.map(function (x) {
+          var codes = SC.codesFor(catalog, x.subdomains);
+          return { value: x.id, label: x.name || x.id, title: x.id + (codes.length ? ' · ' + codes.join(', ') : '') };
+        }), sv.objects, null, 'No objects in the Business Model yet.'),
+        el('label', { text: 'Actions', style: 'display:block;margin-top:10px' }),
+        chipSet(o.actions.map(function (a) {
+          return { value: a.id, label: a.name || a.id, title: a.id + (a.object ? ' on ' + a.object : '') };
+        }), sv.actions, null, 'No actions in the Business Model yet.')
+      ]));
+
+    card.appendChild(repeater(sv.operations, [
+      { key: 'name', label: 'Operation', placeholder: 'RecordFinding' },
+      { key: 'access', label: 'Access', type: 'select', options: SC.ACCESS },
+      { key: 'action', label: 'Implements action', type: 'select', options: refOptions(o.actions, true) },
+      { key: 'object', label: 'On object', type: 'select', options: refOptions(o.objects, true) },
+      { key: 'description', label: 'Description', wide: true },
+      { key: 'inputs', label: 'Inputs' },
+      { key: 'outputs', label: 'Outputs' }
+    ], {
+      title: 'Operations', addLabel: '+ Add operation',
+      hint: 'What callers can ask the service to do. Each operation becomes an endpoint, screen action or job — and a set of tests.',
+      factory: function () { return { access: 'Read' }; },
+      label: function (op) { return op.name || 'Operation'; }
+    }));
+
+    card.appendChild(subSection('Service levels', 'Targets the service must meet. Must-priority services need at least availability or response time.', [fields([
+      { key: 'availability', label: 'Availability', placeholder: '99.5% business hours' },
+      { key: 'responseTime', label: 'Response time', placeholder: '< 2 s' },
+      { key: 'throughput', label: 'Throughput / volume' },
+      { key: 'supportHours', label: 'Support hours' },
+      { key: 'recovery', label: 'Recovery (RPO / RTO)' }
+    ], sv)]));
+
+    card.appendChild(subSection('Dependencies', 'Other services this one needs in order to work — they get built first.', [
+      chipSet(catalog.services.filter(function (x) { return x !== sv && x.id; }).map(function (x) {
+        return { value: x.id, label: x.id + ' ' + (x.name || ''), title: x.summary || '' };
+      }), sv.dependsOn, null, 'No other services yet.'),
+      fields([{ key: 'externalSystems', label: 'External systems', type: 'textarea', rows: 2, wide: true, hint: 'Systems outside this solution it calls or receives from.' }], sv)
+    ]));
+
+    card.appendChild(fields([
+      { key: 'security', label: 'Security & compliance', type: 'textarea', rows: 2, wide: true },
+      { key: 'acceptance', label: 'Acceptance criteria', type: 'textarea', rows: 4, wide: true, hint: 'One per line: Given … when … then … — these seed the test specs.' },
+      { key: 'notes', label: 'Notes', type: 'textarea', rows: 2, wide: true }
+    ], sv));
+
+    card.appendChild(repeater(sv.questions, [
+      { key: 'question', label: 'Question', wide: true },
+      { key: 'owner', label: 'Owner' },
+      { key: 'due', label: 'Due', placeholder: 'YYYY-MM-DD' },
+      { key: 'status', label: 'Status', type: 'select', options: QSTATUS }
+    ], { title: 'Open questions', addLabel: '+ Add question' }));
+
+    card.appendChild(el('div', { class: 'navbtns' }, [
+      el('span'),
+      el('button', {
+        class: 'btn small danger', text: 'Delete service',
+        onclick: function () {
+          if (!confirm('Delete ' + (sv.name || sv.id) + '?')) return;
+          catalog.services.splice(i, 1);
+          catalog.services.forEach(function (x) {
+            x.dependsOn = x.dependsOn.filter(function (d) { return d !== sv.id; });
+          });
+          renderStep(); touched();
+        }
+      })
+    ]));
+    return card;
+  }
+
+  function deliveryCard(sv) {
+    var card = el('details', { class: 'card' }, [el('summary', {}, [
+      el('span', { text: (sv.id || 'SVC') + ' · ' + (sv.name || 'Untitled service') }),
+      el('span', { class: 'right' }, [
+        catCodes(sv.subdomains),
+        el('span', { class: 'sub', text: sv.techSpecs.length + ' specs · ' + sv.workItems.length + ' work items' })
+      ])
+    ])]);
+    if (['In build', 'Live'].indexOf(sv.status) !== -1 && (!sv.techSpecs.length || !sv.workItems.length)) {
+      card.appendChild(el('p', { class: 'notice warn', text: sv.status + ' services need at least one tech spec and one work item.' }));
+    }
+    card.appendChild(repeater(sv.techSpecs, [
+      { key: 'id', label: 'Spec ID', placeholder: 'SPEC-INT-01' },
+      { key: 'title', label: 'Title' },
+      { key: 'status', label: 'Status', type: 'select', options: SPEC_STATUS },
+      { key: 'link', label: 'Link', placeholder: 'https://…', wide: true }
+    ], { title: 'Technical specs', addLabel: '+ Add spec', factory: function () { return { status: 'Draft' }; },
+         label: function (t) { return [t.id, t.title].filter(Boolean).join(' — ') || 'Spec'; } }));
+    card.appendChild(repeater(sv.workItems, [
+      { key: 'id', label: 'Key', placeholder: 'CPI-214' },
+      { key: 'type', label: 'Type', type: 'select', options: SC.WORK_TYPES },
+      { key: 'title', label: 'Title' },
+      { key: 'status', label: 'Status', type: 'select', options: WORK_STATUS },
+      { key: 'link', label: 'Link', placeholder: 'https://…', wide: true }
+    ], { title: 'Work items', addLabel: '+ Add work item', factory: function () { return { type: 'Story', status: 'Backlog' }; },
+         label: function (w) { return [w.id, w.type, w.title].filter(Boolean).join(' · ') || 'Work item'; } }));
+    return card;
+  }
+
+  function coverageView() {
+    var o = catalog.ontology;
+    var svcs = catalog.services.filter(function (sv) { return visible('service', sv); });
+    var sds = filtering() ? o.subdomains.filter(function (sd) { return filter.indexOf(sd.id) !== -1; }) : o.subdomains;
+    var out = [lede('Where the catalog is thin. The matrix shows which sub-domains use which services; the action list shows which business Actions from the Business Model no service implements yet — requirements nobody is building.')];
+
+    if (sds.length) {
+      var head = el('tr', {}, [el('th', { text: 'Service' })].concat(sds.map(function (sd) { return el('th', { text: sd.code || sd.id, title: sd.name || '' }); })));
+      var rows = svcs.map(function (sv) {
+        return el('tr', {}, [el('td', { text: sv.id + ' ' + (sv.name || '') })].concat(sds.map(function (sd) {
+          return el('td', { class: 'dot', text: sv.subdomains.indexOf(sd.id) !== -1 ? '●' : '' });
+        })));
+      });
+      rows.push(el('tr', {}, [el('td', { html: '<b>Services</b>' })].concat(sds.map(function (sd) {
+        var n = catalog.services.filter(function (sv) { return sv.subdomains.indexOf(sd.id) !== -1; }).length;
+        return el('td', { class: n ? 'dot' : 'gap', text: String(n) });
+      }))));
+      out.push(subSection('Sub-domain coverage', null, [el('div', { class: 'table-wrap' }, [el('table', { class: 'matrix' }, [el('thead', {}, [head]), el('tbody', {}, rows)])])]));
+    }
+
+    var acts = o.actions.filter(function (a) {
+      if (!filtering()) return true;
+      var obj = o.objects.filter(function (x) { return x.name.toLowerCase() === String(a.object || '').toLowerCase(); })[0];
+      return obj ? SC.serviceMatches(obj, filter) : filter.indexOf(OM.UNTAGGED) !== -1;
+    });
+    if (acts.length) {
+      out.push(subSection('Business Actions covered by services', 'Every Action should be implemented or supported by at least one service.', [
+        el('div', { class: 'table-wrap' }, [el('table', { class: 'matrix' }, [
+          el('thead', {}, [el('tr', {}, [el('th', { text: 'Action' }), el('th', { text: 'Primary object' }), el('th', { text: 'Implemented by' })])]),
+          el('tbody', {}, acts.map(function (a) {
+            var by = SC.servicesForAction(catalog, a.id);
+            return el('tr', {}, [
+              el('td', { text: a.id + ' ' + a.name }), el('td', { text: a.object || '' }),
+              el('td', { class: by.length ? '' : 'gap', text: by.length ? by.join(', ') : 'No service yet' })
+            ]);
+          }))
+        ])])
+      ]));
+    }
+    if (!sds.length && !acts.length) out.push(el('p', { class: 'empty', text: 'Nothing to show yet — add sub-domains and actions in the Business Model, and services here.' }));
+    return out;
+  }
+
+  function previewSection() {
+    return el('div', { class: 'sub-section' }, [
+      el('h4', { text: 'Generated Markdown' }),
+      el('p', { class: 'hint', text: filtering()
+        ? 'Preview of the ' + filterLabel() + ' view — a reading aid for reviewing with those SMEs. “Download view” exports it; “Download full .md” (and the header button) always write the whole document.'
+        : 'Live preview of the file you will download.' }),
+      el('pre', { class: 'preview', text: currentMarkdown() }),
+      el('div', { class: 'navbtns' }, [
+        el('button', { class: 'btn', text: 'Copy to clipboard', onclick: copyMarkdown }),
+        el('span', {}, [
+          filtering() ? el('button', { class: 'btn', text: 'Download ' + filterLabel() + ' view', onclick: downloadView }) : null,
+          document.createTextNode(' '),
+          el('button', { class: 'btn primary', text: filtering() ? 'Download full .md' : 'Download .md', onclick: downloadMarkdown })
+        ])
+      ])
+    ]);
+  }
+
+  /* --------------------------------------------------------------- modes */
+
+  function setMode(next) {
+    if (next === mode) return;
+    stepByMode[mode] = stepIndex;
+    mode = next;
+    try { localStorage.setItem(MODE_KEY, mode); } catch (e) {}
+    steps = mode === 'catalog' ? catalogSteps() : ontologySteps;
+    stepIndex = Math.min(stepByMode[mode] || 0, steps.length - 1);
+    navButtons = null;
+    pinned = new WeakSet();
+    groundCatalog();
+    pruneFilter();
+    renderAll();
+    window.scrollTo(0, 0);
+  }
+  function renderModes() {
+    Array.prototype.forEach.call(document.querySelectorAll('#modes button'), function (b) {
+      b.setAttribute('aria-selected', String(b.getAttribute('data-mode') === mode));
+    });
+    document.title = mode === 'catalog' ? 'Service Catalog · Ontology Builder' : 'Ontology Builder';
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('#modes button'), function (b) {
+    b.addEventListener('click', function () { setMode(b.getAttribute('data-mode')); });
+  });
+
   /* -------------------------------------------------------------- views */
 
   var navButtons = null;
@@ -830,7 +1283,7 @@
   /* Counts change on every keystroke, so update the nav in place — rebuilding it
      would detach the button under a click that is already in flight. */
   function renderNav() {
-    if (!navButtons) buildNav();
+    if (!navButtons || navButtons.length !== steps.length) buildNav();
     steps.forEach(function (s, i) {
       var c = s.count();
       navButtons[i]._count.textContent = c[0] + '/' + c[1];
@@ -863,8 +1316,9 @@
   }
 
   function renderChecks() {
-    document.querySelector('aside h3').textContent = filtering() ? 'Readiness — whole document' : 'Readiness';
-    var checks = OM.validate(model);
+    var noun = mode === 'catalog' ? 'catalog' : 'document';
+    document.querySelector('aside h3').textContent = filtering() ? 'Readiness — whole ' + noun : 'Readiness';
+    var checks = mode === 'catalog' ? SC.validate(catalog) : OM.validate(model);
     var passed = checks.filter(function (c) { return c.pass; }).length;
     document.getElementById('progress').style.width = Math.round(passed / checks.length * 100) + '%';
     var ul = document.getElementById('checks');
@@ -882,6 +1336,13 @@
 
   function renderWho() {
     var who = document.getElementById('who');
+    if (mode === 'catalog') {
+      var tagged = catalog.services.length;
+      who.textContent = (catalog.meta.customer || 'New catalog') + (catalog.meta.domain ? ' — ' + catalog.meta.domain : '') +
+        ' · ' + tagged + (tagged === 1 ? ' service' : ' services') + (filtering() ? ' · viewing ' + filterLabel() : '');
+      who.title = who.textContent;
+      return;
+    }
     who.textContent =
       (model.meta.customer || 'New document') +
       (model.meta.domain ? ' — ' + model.meta.domain : '') +
@@ -894,24 +1355,28 @@
   /* Rebuilt only when sub-domains, SMEs or the selection change — not on every keystroke elsewhere. */
   function renderFilterBar(force) {
     var bar = document.getElementById('filterbar');
-    var untagged = model.objects.filter(function (o) { return !o.subdomains.length; }).length;
-    var sig = JSON.stringify([model.subdomains.map(function (sd) { return [sd.id, sd.code, sd.name, sd.smes]; }), untagged, filter]);
+    var untagged = mode === 'catalog'
+      ? catalog.services.filter(function (sv) { return !sv.subdomains.length; }).length
+      : model.objects.filter(function (o) { return !o.subdomains.length; }).length;
+    var sds = subdomainSource();
+    var sig = JSON.stringify([mode, sds.map(function (sd) { return [sd.id, sd.code, sd.name, sd.smes]; }), untagged, filter]);
     if (!force && sig === filterSig) return;
     filterSig = sig;
     bar.innerHTML = '';
-    bar.hidden = !model.subdomains.length;
+    bar.hidden = !sds.length;
     if (!bar.hidden) {
       bar.appendChild(el('span', { class: 'lbl', text: 'Sub-domain view' }));
       bar.appendChild(chip('All', !filtering(), 'Show the whole model', function () { setFilter([]); }));
-      model.subdomains.forEach(function (sd) {
+      sds.forEach(function (sd) {
         bar.appendChild(chip(sd.code || sd.id, filter.indexOf(sd.id) !== -1, sd.name || '', function () { toggleFilter(sd.id); }));
       });
       if (untagged || filter.indexOf(OM.UNTAGGED) !== -1) {
         bar.appendChild(chip('Untagged (' + untagged + ')', filter.indexOf(OM.UNTAGGED) !== -1,
-          'Objects not yet tagged with a sub-domain', function () { toggleFilter(OM.UNTAGGED); }));
+          mode === 'catalog' ? 'Services not yet tagged with a sub-domain' : 'Objects not yet tagged with a sub-domain',
+          function () { toggleFilter(OM.UNTAGGED); }));
       }
       if (filtering()) {
-        var smes = OM.smesFor(model, filter);
+        var smes = OM.smesFor({ subdomains: sds }, filter);
         bar.appendChild(el('span', { class: 'smes' }, smes.length
           ? [el('span', { text: 'Reviewing with: ' }), el('b', { text: smes.join('; ') })]
           : [el('span', { text: 'No SMEs recorded for this view' })]));
@@ -938,16 +1403,20 @@
     document.body.appendChild(a); a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 0);
   }
+  function docName() {
+    return slug((mode === 'catalog' ? catalog : model).meta.customer) + (mode === 'catalog' ? '-service-catalog' : '-business-model');
+  }
+  function renderDoc(filtered) {
+    if (mode === 'catalog') return SC.toMarkdown(filtered ? SC.filterCatalog(catalog, filter) : catalog);
+    return OM.toMarkdown(filtered ? OM.filterModel(model, filter) : model);
+  }
   function downloadMarkdown() {
-    download(slug(model.meta.customer) + '-business-model.md', OM.toMarkdown(model), 'text/markdown');
+    download(docName() + '.md', renderDoc(false), 'text/markdown');
     toast('Markdown downloaded');
   }
-  function currentMarkdown() {
-    return OM.toMarkdown(filtering() ? OM.filterModel(model, filter) : model);
-  }
+  function currentMarkdown() { return renderDoc(filtering()); }
   function downloadView() {
-    download(slug(model.meta.customer) + '-' + slug(filterLabel()) + '-view.md',
-             OM.toMarkdown(OM.filterModel(model, filter)), 'text/markdown');
+    download(docName() + '-' + slug(filterLabel()) + '-view.md', renderDoc(true), 'text/markdown');
     toast(filterLabel() + ' view downloaded');
   }
   function copyMarkdown() {
@@ -966,7 +1435,8 @@
 
   document.getElementById('btn-md').onclick = downloadMarkdown;
   document.getElementById('btn-json').onclick = function () {
-    download(slug(model.meta.customer) + '-ontology.json', JSON.stringify(model, null, 2), 'application/json');
+    if (mode === 'catalog') download(docName() + '.json', JSON.stringify(catalog, null, 2), 'application/json');
+    else download(slug(model.meta.customer) + '-ontology.json', JSON.stringify(model, null, 2), 'application/json');
     toast('JSON downloaded');
   };
   document.getElementById('btn-import').onclick = function () { document.getElementById('file').click(); };
@@ -976,23 +1446,43 @@
     var r = new FileReader();
     r.onload = function () {
       try {
-        var data = /\.json$/i.test(f.name) ? JSON.parse(r.result) : OM.extractModel(r.result);
+        var text = String(r.result);
+        var data = /\.json$/i.test(f.name) ? JSON.parse(text)
+          : /```json service-catalog/.test(text) ? SC.extractCatalog(text) : OM.extractModel(text);
+        var isCatalog = SC.isCatalog(data);
         if (data.view && data.view.filtered) {
           var ok = confirm('“' + f.name + '” is a filtered sub-domain view (' + (data.view.labels || []).join(', ') +
             '), not the full document. Importing it replaces your current document with only what is in that view.\n\nImport anyway?');
           if (!ok) { e.target.value = ''; return; }
           delete data.view;
         }
-        model = OM.normalize(data);
+        if (isCatalog) {
+          catalog = SC.normalize(data);
+          stepByMode.catalog = 0;
+          if (mode !== 'catalog') setMode('catalog');
+          if (ontologyHasContent() && !catalogMatchesModel()) {
+            toast('Imported — note: the open Business Model is for a different customer');
+          } else toast('Imported ' + f.name);
+        } else {
+          model = OM.normalize(data);
+          stepByMode.ontology = 0;
+          if (mode !== 'ontology') setMode('ontology');
+          toast('Imported ' + f.name);
+        }
         pruneFilter();
-        stepIndex = 0; renderAll(); touched(); toast('Imported ' + f.name);
+        stepIndex = 0; renderAll(); touched();
       } catch (err) { alert('Could not import: ' + err.message); }
       e.target.value = '';
     };
     r.readAsText(f);
   };
   document.getElementById('btn-reset').onclick = function () {
-    if (!confirm('Discard the current document and start over?')) return;
+    if (mode === 'catalog') {
+      if (!confirm('Discard the current service catalog and start over? The Business Model is kept.')) return;
+      catalog = SC.emptyCatalog(); stepIndex = 0; renderAll(); touched();
+      return;
+    }
+    if (!confirm('Discard the current Business Model and start over? The service catalog is kept.')) return;
     model = OM.emptyModel(); pruneFilter(); stepIndex = 0; renderAll(); touched();
   };
   // Examples ship as a script (examples.js) rather than fetched JSON, so they load from file:// too.
@@ -1004,14 +1494,18 @@
   exampleSelect.onchange = function () {
     var ex = examples[exampleSelect.value];
     exampleSelect.value = '';
-    if (!ex || !confirm('Replace the current document with the example “' + ex.label + '”?')) return;
+    if (!ex || !confirm('Replace the current Business Model' + (ex.catalog ? ' and Service Catalog' : '') +
+                        ' with the example “' + ex.label + '”?')) return;
     model = OM.normalize(ex.model);
+    catalog = ex.catalog ? SC.normalize(ex.catalog) : SC.emptyCatalog();
+    stepByMode = { ontology: 0, catalog: 0 };
     filter = []; saveFilter(); pinned = new WeakSet();
     stepIndex = 0; renderAll(); touched();
   };
 
-  function renderAll() { renderFilterBar(true); renderNav(); renderStep(); renderChecks(); renderWho(); }
+  function renderAll() { renderModes(); renderFilterBar(true); renderNav(); renderStep(); renderChecks(); renderWho(); }
   pruneFilter();
+  groundCatalog();
   renderAll();
 })();
 </script>
